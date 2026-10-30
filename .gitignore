@@ -1,15 +1,2 @@
-__pycache__/
-node/radio/node_modules/
-node/radio/public/music/*
-assets/*
-onstart.py
-log.txt
-local.txt
-flask_launcher.sh
-upload/
-*.pyc
-flaskServers/CLE/__pycache__/
-.vscode/
-env/
-node/cas/slot_machines/server/node_modules/
 node_modules/
+dist/
