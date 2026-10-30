@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLONATOR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #02061a;
+      --bg-mid: #06194a;
+      --blue: #3da9ff;
+      --cyan: #79dafa;
+      --darker-cyan: rgb(208, 229, 247);
+      --glow: rgba(61, 169, 255, 0.75);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: radial-gradient(ellipse at 50% 40%, var(--bg-mid) 0%, var(--bg-deep) 70%);
+      font-family: "Josefin Sans", "Segoe UI", sans-serif;
+      position: relative;
+    }
+
+    /* Grille en perspective façon synthwave */
+    .grid {
+      position: absolute;
+      left: -50%;
+      bottom: 0;
+      width: 200%;
+      height: 55%;
+      background-image:
+        linear-gradient(var(--blue) 1px, transparent 1px),
+        linear-gradient(90deg, var(--blue) 1px, transparent 1px);
+      background-size: 60px 60px;
+      transform: perspective(380px) rotateX(62deg);
+      transform-origin: bottom;
+      opacity: 0.35;
+      mask-image: linear-gradient(to top, #000 10%, transparent 90%);
+      -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 90%);
+      animation: scroll 3s linear infinite;
+    }
+
+    /* Grille du haut : miroir de celle du bas */
+    .grid.top {
+      bottom: auto;
+      top: 0;
+      transform: perspective(380px) rotateX(-62deg);
+      transform-origin: top;
+      mask-image: linear-gradient(to bottom, #000 10%, transparent 90%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 10%, transparent 90%);
+      animation-direction: reverse;
+    }
+
+    @keyframes scroll {
+      to { background-position: 0 60px; }
+    }
+
+    /* Lignes de balayage CRT */
+    body::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.18) 3px
+      );
+      pointer-events: none;
+    }
+
+    /* Vignette + effet d'écran bombé */
+    .vignette {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(
+        ellipse at center,
+        rgba(0, 0, 0, 0) 45%,
+        rgba(0, 0, 0, 0.45) 80%,
+        rgba(0, 0, 0, 0.95) 100%
+      );
+      filter: blur(1px);
+      box-shadow:
+        inset 0 0 120px 30px rgba(0, 0, 0, 0.85),
+        inset 0 0 40px 6px rgba(61, 169, 255, 0.5);
+    }
+
+    h1 {
+      position: relative;
+      z-index: 1;
+      font-weight: 900;
+      font-size: clamp(2.5rem, 11vw, 8rem);
+      letter-spacing: 0.18em;
+      padding-left: 0.18em; /* compense le letter-spacing pour centrer */
+      color: var(--cyan);
+      text-shadow:
+        0 0 6px var(--cyan),
+        0 0 18px var(--blue),
+        0 0 40px var(--glow),
+        0 0 80px var(--glow);
+      animation: flicker 5s infinite;
+    }
+
+    h2 {
+      position: relative;
+      z-index: 1;
+      font-weight: 400;
+      font-size: clamp(1rem, 4vw, 2rem);
+      letter-spacing: 0.1em;
+      color: var(--darker-cyan);
+      text-shadow:
+        0 0 2px var(--cyan),
+        0 0 18px var(--blue),
+        0 0 30px var(--glow),
+        0 0 80px var(--glow);
+      animation: flicker 4s infinite;
+    }
+
+    .title-container {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+
+    @keyframes flicker {
+      0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; }
+      20%, 63% { opacity: 0.75; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid top"></div>
+  <div class="grid"></div>
+  <div class="title-container">
+    <h1>CLONATOR</h1>
+    <h2>Appuyez pour commencer à cloner !</h2>
+  </div>
+  <!-- <div class="vignette"></div> -->
+</body>
+</html>

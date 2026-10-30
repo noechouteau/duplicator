@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body{
+        background-color: #e43131;
+      }
+        .head-div {
+            background-image: url('Tete.png');
+            background-size:contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            display: flex;
+            transform-origin: center bottom;
+            will-change: transform;
+            height: 150px;
+        }
+        .body-div {
+            background-image: url('Corps.png');
+            background-size:contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transform-origin: center top;
+            will-change: transform;
+            height: 217px;
+        }
+        .eye-div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 70px;
+        }
+        .ema-div {
+          position: fixed;
+          top: 0;
+          left: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+          width: 200px;
+          transform: scale(0.5);
+          transform-origin: top left;
+          pointer-events: none;
+          will-change: transform;
+      }
+    </style>
+</head>
+<body>
+    <div class="ema-div">
+        <div class="head-div">
+            <img src="Yeux.png" alt="Placeholder Image" class="eye-div">
+            <img src="Yeux.png" alt="Placeholder Image" class="eye-div">
+        </div>
+        <div class="body-div"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script>
+      const ema = document.querySelector('.ema-div');
+      const tete = document.querySelector('.head-div');
+      const corps = document.querySelector('.body-div');
+
+      const yeux = document.querySelectorAll('.eye-div');
+
+      // Position et vitesse actuelles
+      const position = {
+          x: 100,
+          y: 100,
+          vx: 0,
+          vy: 0
+      };
+
+      const target = { x: 100, y: 100 };
+
+      // Réglages du mouvement
+      const CONFIG = {
+          acceleration: 2.8,
+          friction: 0.965,
+          maxSpeed: 1650,
+          arrivalRadius: 25,
+          maxTilt: 27,
+          tiltSmoothness: 15
+      };
+
+      let bodyTilt = 0;
+      let headTilt = 0;
+      let headAdvance = 0;
+      let lastTime = performance.now();
+
+      // GSAP gère les propriétés visuelles sans recréer de tweens
+      const moveX = gsap.quickSetter(ema, 'x', 'px');
+      const moveY = gsap.quickSetter(ema, 'y', 'px');
+      const bodyRotate = gsap.quickSetter(corps, 'rotation', 'deg');
+      const headRotate = gsap.quickSetter(tete, 'rotation', 'deg');
+      const headX = gsap.quickSetter(tete, 'x', 'px');
+      const eyeSetters = [...yeux].map(oeil => ({
+          x: gsap.quickSetter(oeil, 'x', 'px'),
+          y: gsap.quickSetter(oeil, 'y', 'px')
+      }));
+
+      let eyeX = 0;
+      let eyeY = 0;
+
+      let isHolding = false;
+
+      // Quand tu appuies sur la souris
+      window.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return;
+
+          isHolding = true;
+
+          target.x = event.clientX - 50;
+          target.y = event.clientY - 90;
+      });
+
+      // Quand tu déplaces la souris en maintenant le clic
+      window.addEventListener('pointermove', (event) => {
+          if (!isHolding) return;
+
+          target.x = event.clientX - 50;
+          target.y = event.clientY - 90;
+      });
+
+      // Quand tu relâches la souris
+      window.addEventListener('pointerup', () => {
+          isHolding = false;
+      });
+
+      // Si le clic est interrompu
+      window.addEventListener('pointercancel', () => {
+          isHolding = false;
+      });
+
+      window.addEventListener('blur', () => {
+          isHolding = false;
+      });
+
+      function animate(now) {
+          const dt = Math.min((now - lastTime) / 1000, 0.05);
+          lastTime = now;
+
+          const dx = target.x - position.x;
+          const dy = target.y - position.y;
+          const distance = Math.hypot(dx, dy);
+
+          // Vitesse souhaitée, progressivement réduite à l'arrivée
+          const desiredSpeed = Math.min(
+              CONFIG.maxSpeed,
+              distance * CONFIG.acceleration
+          );
+
+          const desiredVX = distance > 0.01 ? dx / distance * desiredSpeed : 0;
+          const desiredVY = distance > 0.01 ? dy / distance * desiredSpeed : 0;
+
+          // Adaptation progressive de la vitesse
+          const steering = 1 - Math.exp(-5 * dt);
+
+          position.vx += (desiredVX - position.vx) * steering;
+          position.vy += (desiredVY - position.vy) * steering;
+
+          position.x += position.vx * dt;
+          position.y += position.vy * dt;
+
+          moveX(position.x);
+          moveY(position.y);
+
+          // Inclinaison du corps
+          const targetTilt = gsap.utils.clamp(
+              -CONFIG.maxTilt,
+              CONFIG.maxTilt,
+              position.vx / CONFIG.maxSpeed * CONFIG.maxTilt
+          );
+
+          const tiltFactor = 1 - Math.exp(-CONFIG.tiltSmoothness * dt);
+
+          bodyTilt += (targetTilt - bodyTilt) * tiltFactor;
+
+          // La tête accompagne l'inclinaison du corps
+          // mais avec un angle plus léger
+          const desiredHeadTilt = bodyTilt * 0.45;
+
+          // La tête avance dans la direction du mouvement
+          const desiredHeadAdvance = position.vx / CONFIG.maxSpeed * 12;
+
+          headTilt += (desiredHeadTilt - headTilt) * tiltFactor;
+          headAdvance += (desiredHeadAdvance - headAdvance) * tiltFactor;
+
+          // Les yeux suivent la direction réelle du déplacement
+          const targetEyeX = gsap.utils.clamp(
+              -16, 26,
+              position.vx / CONFIG.maxSpeed * 16
+          );
+
+          const targetEyeY = gsap.utils.clamp(
+              -10, 10,
+              position.vy / CONFIG.maxSpeed * 10
+          );
+
+          const eyeFactor = 1 - Math.exp(-10 * dt);
+
+          eyeX += (targetEyeX - eyeX) * eyeFactor;
+          eyeY += (targetEyeY - eyeY) * eyeFactor;
+
+          // Application des animations
+          bodyRotate(bodyTilt);
+          headRotate(headTilt);
+          headX(headAdvance);
+
+          eyeSetters.forEach(oeil => {
+              oeil.x(eyeX);
+              oeil.y(eyeY);
+          });
+
+          requestAnimationFrame(animate);
+      }
+
+      // Position initiale
+      moveX(position.x);
+      moveY(position.y);
+
+      requestAnimationFrame(animate);
+
+    </script>
+</body>
+</html>
