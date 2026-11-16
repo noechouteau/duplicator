@@ -322,7 +322,7 @@
       gap: 15px;
       width: 200px;
       transform: translate3d(100px, 100px, 0) scale(.5);
-      transform-origin: top left;
+      transform-origin: 50% 50%;
       pointer-events: none;
       z-index: -10;
       will-change: transform;
@@ -830,7 +830,7 @@ function returnHome() {
       // Le pivot du corps reste en haut : à 180°, son dessin monte de sa hauteur.
       // On compense verticalement cette hauteur pour laisser la tête posée dessus.
       const SLEEP_BODY_Y = 200;
-      const pose = { headY: SLEEP_HEAD_Y, bodyRotation: 180, bodyY: SLEEP_BODY_Y, eyesOpen: 0 };
+      const pose = { headY: SLEEP_HEAD_Y, bodyRotation: 180, bodyY: SLEEP_BODY_Y, eyesOpen: 0, happy: 0 };
       let awake = false;
       let poseTimeline = null;
       // Évite de déplacer le personnage lors de l'utilisation des boutons.
@@ -846,14 +846,77 @@ function returnHome() {
         isHolding = true;
         updateTarget(event);
       });
+
+      let joyTween = null;
+      let joyRelease = null;
+      let joyActive = false;
+      let joyStart = 0;
+      const JOY_MIN_HOLD = 0.5;   // durée minimale en petit (s)
+      const SCALE_NORMAL = 0.5;
+      const SCALE_SMALL  = 0.44;
+      const JOY_ELASTIC  = 'elastic.out(1, 0.45)';
+      
+      function isOnEma(event) {
+        const r = ema.getBoundingClientRect();
+        return event.clientX >= r.left && event.clientX <= r.right &&
+              event.clientY >= r.top  && event.clientY <= r.bottom;
+      }
+      // Yeux joyeux : on ne garde que la moitié haute de l'œil → forme de "^ ^"
+      function applyHappy() {
+        const clip = 'inset(0% 0% ' + (pose.happy * 50) + '% 0%)';
+        yeux.forEach(oeil => { oeil.style.clipPath = clip; });
+      }
+      function resetJoy() {
+        joyTween?.kill();
+        joyRelease?.kill();
+        joyActive = false;
+        pose.happy = 0;
+        applyHappy();
+        gsap.set(ema, { scale: SCALE_NORMAL });
+      }
+
+      function joyDown() {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        joyRelease?.kill();
+        joyTween?.kill();
+        joyActive = true;
+        joyStart = performance.now();
+        joyTween = gsap.timeline()
+          .to(ema,  { scale: SCALE_SMALL, duration: reduced ? 0.01 : 0.45, ease: JOY_ELASTIC }, 0)
+          .to(pose, { happy: 1, duration: 0.14, ease: 'power2.out', onUpdate: applyHappy }, 0);
+      }
+      function joyUp() {
+        if (!joyActive) return;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const elapsed = (performance.now() - joyStart) / 1000;
+        joyRelease?.kill();
+        joyRelease = gsap.delayedCall(Math.max(0, JOY_MIN_HOLD - elapsed), () => {
+          joyActive = false;
+          joyTween?.kill();
+          joyTween = gsap.timeline()
+            .to(ema,  { scale: SCALE_NORMAL, duration: reduced ? 0.01 : 0.55, ease: JOY_ELASTIC }, 0)
+            .to(pose, { happy: 0, duration: 0.2, ease: 'power2.inOut', onUpdate: applyHappy }, 0.05);
+        });
+      }
+
+      window.addEventListener('pointerdown', event => {
+        if (event.button === 0 && awake && !isControl(event.target) && isOnEma(event)) joyDown();
+      });
+      window.addEventListener('pointerup', joyUp);
+      window.addEventListener('pointercancel', joyUp);
+      window.addEventListener('blur', joyUp);
+
       window.addEventListener('pointermove', event => {
         if (awake && isHolding) updateTarget(event);
       });
       window.addEventListener('pointerup', () => { isHolding = false; });
       window.addEventListener('pointercancel', () => { isHolding = false; });
       window.addEventListener('blur', () => { isHolding = false; });
-      const moveX = gsap.quickSetter(ema, 'x', 'px');
-      const moveY = gsap.quickSetter(ema, 'y', 'px');
+      const ORIGIN_FIX = () => ({ x: ema.offsetWidth * 0.25, y: ema.offsetHeight * 0.25 });
+      const rawMoveX = gsap.quickSetter(ema, 'x', 'px');
+      const rawMoveY = gsap.quickSetter(ema, 'y', 'px');
+      const moveX = x => rawMoveX(x - ORIGIN_FIX().x);
+      const moveY = y => rawMoveY(y - ORIGIN_FIX().y);
       const bodyRotate = gsap.quickSetter(corps, 'rotation', 'deg');
       const bodyY = gsap.quickSetter(corps, 'y', 'px');
       const headRotate = gsap.quickSetter(tete, 'rotation', 'deg');
@@ -865,13 +928,18 @@ function returnHome() {
         y: gsap.quickSetter(oeil, 'y', 'px')
       }));
       // x/y GSAP sur le même élément que scale CSS : GSAP conserve l'échelle.
-      gsap.set(ema, { x: position.x, y: position.y, scale: 0.5 });
+      gsap.set(ema, {
+        x: position.x - ORIGIN_FIX().x,
+        y: position.y - ORIGIN_FIX().y,
+        scale: 0.5
+      });
       // Appliquer la pose dès le premier affichage : yeux clos, corps retourné, tête abaissée.
       gsap.set(yeux, { transformOrigin: '50% 50%' });
       gsap.set(corps, { rotation: 180, y: SLEEP_BODY_Y });
       gsap.set(tete, { y: SLEEP_HEAD_Y });
       gsap.set(yeux, { scaleY: 0.06 });
       function wake() {
+        resetJoy();
         poseTimeline?.kill();
         awake = false;
         isHolding = false;
@@ -888,6 +956,7 @@ function returnHome() {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) poseTimeline.progress(1);
       }
       function sleep() {
+        resetJoy();
         poseTimeline?.kill();
         awake = false;
         isHolding = false;
@@ -955,7 +1024,7 @@ function returnHome() {
         bodyY(pose.bodyY);
         headRotate(headTilt);
         headX(headAdvance);
-        eyeSetters.forEach(oeil => { oeil.x(eyeX); oeil.y(eyeY); });
+        eyeSetters.forEach(oeil => { oeil.x(eyeX); oeil.y(eyeY + pose.happy * 14); });
         requestAnimationFrame(animate);
       }
       requestAnimationFrame(animate);
