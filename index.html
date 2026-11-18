@@ -1,4 +1,41 @@
 <!doctype html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  DUPLICATOR — borne interactive                                  ║
+  ╠══════════════════════════════════════════════════════════════════╣
+  ║  FICHIERS NÉCESSAIRES (dans le même dossier que ce fichier) :    ║
+  ║    textes.js                      → TOUS LES TEXTES (à modifier) ║
+  ║    Tete.png, Corps.png, Yeux.png  → le personnage EMA            ║
+  ║    logo.png                       → logo en bas (facultatif)     ║
+  ║                                                                  ║
+  ║  POUR CHANGER UN TEXTE : ouvrez textes.js, pas ce fichier.       ║
+  ║                                                                  ║
+  ║  COMMENT ÇA MARCHE :                                             ║
+  ║    1. Écran d'accueil : le titre au centre, "touchez l'écran".   ║
+  ║    2. Au clic : le titre rétrécit, EMA se réveille, un carré     ║
+  ║       vide apparaît.                                             ║
+  ║    3. Touches du clavier (simulent l'insertion d'un objet) :     ║
+  ║         F → objet « icosaèdre »   H → objet « clé »              ║
+  ║         G → objet NON clonable (croix)                           ║
+  ║    4. Bouton DUPLIQUER → barre de progression + pubs + scan 3D.  ║
+  ║    5. Après 5 s d'inactivité, retour à l'écran d'accueil.        ║
+  ║                                                                  ║
+  ║  STRUCTURE DU FICHIER :                                          ║
+  ║    CSS  : 1 Variables → 2 Base → 3 Titre → 4 Horloge → 5 Cadre   ║
+  ║           → 6 Décor → 7 Zone centrale → 8 Indicateur tactile     ║
+  ║           → 9 EMA → 10 Bulle d'EMA → 11 Responsive/accessibilité ║
+  ║    HTML : même ordre, du fond vers le premier plan.              ║
+  ║    JS   : 0 Textes (remplit la page depuis textes.js)            ║
+  ║           A Décor (horloge, relevés) → B Personnage EMA          ║
+  ║           → C Application (bulle, 3D, scénario, animations)      ║
+  ║                                                                  ║
+  ║  Dans le HTML, les textes sont repérés par des attributs :       ║
+  ║    data-texte="chemin"      → texte de l'élément                 ║
+  ║    data-texte-aria="chemin" → description accessibilité          ║
+  ║    data-texte-alt="chemin"  → texte alternatif d'une image       ║
+  ║  Le « chemin » correspond à un emplacement dans textes.js.       ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
@@ -7,11 +44,501 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;900&display=swap" rel="stylesheet" />
-  <style>
-    /* Le titre central est remplacé par la bulle d'EMA */
-    .empty .msg { display: none; }
 
-    /* ---------- Bulle d'EMA ---------- */
+  <!-- Fichier externe contenant TOUS les textes -->
+  <script src="textes.js"></script>
+
+  <style>
+    /* ============================================================
+       1. VARIABLES — couleurs et styles de traits réutilisés partout
+       ============================================================ */
+    :root {
+      --blue: #3a5cff;
+      --white: #ffffff;
+      --cyan: #8cf3ff;
+      --line: 2px solid var(--white);                       /* trait plein */
+      --dash: 1.5px dashed rgba(255, 255, 255, 0.6);        /* trait pointillé */
+      --edge: 22px;                                         /* marge du cadre */
+      --pub-label: "PUB // ";                               /* remplacé par textes.js */
+    }
+
+    /* ============================================================
+       2. BASE — page, fond bleu, grain animé
+       ============================================================ */
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    html, body { height: 100%; }
+
+    body {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: var(--blue);
+      color: var(--white);
+      font-family: "Unbounded", "Arial Black", sans-serif;
+      cursor: pointer;
+    }
+
+    /* Grain sombre : une image de bruit (SVG) qui "saute" par à-coups */
+    body::after {
+      content: "";
+      position: absolute;
+      inset: -50%;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0.5;
+      animation: grain 0.8s steps(1) infinite;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 .04 0 0 0 0 .25 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    @keyframes grain {
+      0%   { transform: translate(0, 0); }
+      12%  { transform: translate(-7%, -11%); }
+      25%  { transform: translate(9%, 6%); }
+      37%  { transform: translate(-12%, 8%); }
+      50%  { transform: translate(6%, -13%); }
+      62%  { transform: translate(-4%, 12%); }
+      75%  { transform: translate(11%, -5%); }
+      87%  { transform: translate(-9%, -3%); }
+      100% { transform: translate(0, 0); }
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }   /* clignotement du curseur "_" */
+
+    /* ============================================================
+       3. TITRE + effet glitch
+       ============================================================ */
+    .title-wrap {
+      position: relative;
+      z-index: 1;
+      padding: clamp(1.2rem, 4vw, 3rem) clamp(1.5rem, 5vw, 4rem);
+    }
+    h1 {
+      position: relative;
+      font-weight: 900;
+      font-size: clamp(2rem, 10.5vw, 9rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tm {   /* petit « TM » en haut à droite */
+      position: absolute;
+      left: 100%;
+      top: 0.1em;
+      margin-left: 0.12em;
+      font-size: max(0.15em, 8px);
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      line-height: 1;
+    }
+
+    /* Glitch : deux copies du titre (via attr(data-text)) qui apparaissent
+       par à-coups, découpées en bandes (clip-path) et décalées */
+    h1::before, h1::after {
+      content: attr(data-text);
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    h1::before { color: var(--cyan);  animation: glitch-a 4.3s infinite; }
+    h1::after  { color: var(--white); mix-blend-mode: screen; animation: glitch-b 3.1s infinite; }
+    @keyframes glitch-a {
+      0%, 88%, 100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translate(0); }
+      89% { opacity: 1; clip-path: inset(10% 0 62% 0); transform: translate(-0.05em, 0); }
+      91% { opacity: 1; clip-path: inset(58% 0 18% 0); transform: translate(0.04em, 0); }
+      93% { opacity: 1; clip-path: inset(32% 0 44% 0); transform: translate(-0.03em, 0); }
+      95% { opacity: 1; clip-path: inset(78% 0 4% 0);  transform: translate(0.05em, 0); }
+    }
+    @keyframes glitch-b {
+      0%, 80%, 100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translate(0); }
+      81% { opacity: 1; clip-path: inset(44% 0 38% 0); transform: translate(0.05em, 0); }
+      83% { opacity: 1; clip-path: inset(6% 0 80% 0);  transform: translate(-0.04em, 0); }
+      85% { opacity: 1; clip-path: inset(66% 0 12% 0); transform: translate(0.03em, 0); }
+    }
+
+    /* Fine barre blanche qui traverse l'écran pendant les glitchs */
+    .scan {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.35);
+      z-index: 1;
+      opacity: 0;
+      pointer-events: none;
+      animation: scan 6.5s infinite;
+    }
+    @keyframes scan {
+      0%, 91%, 100% { opacity: 0; top: 30%; }
+      92% { opacity: 0.6; top: 38%; }
+      94% { opacity: 0.4; top: 57%; }
+      96% { opacity: 0.5; top: 71%; }
+      97% { opacity: 0; top: 71%; }
+    }
+
+    /* Petites croix « + » aux quatre coins du titre */
+    .plus { position: absolute; width: 20px; height: 20px; }
+    .plus::before, .plus::after { content: ""; position: absolute; background: var(--white); }
+    .plus::before { left: 9px; top: 0; width: 2px; height: 20px; }
+    .plus::after  { left: 0; top: 9px; width: 20px; height: 2px; }
+    .plus.tl { top: 0; left: 0; }
+    .plus.tr { top: 0; right: 0; }
+    .plus.bl { bottom: 0; left: 0; }
+    .plus.br { bottom: 0; right: 0; }
+
+    /* ============================================================
+       4. HORLOGE — étiquette en pointillés au-dessus du titre
+       ============================================================ */
+    .tag-pos {   /* conteneur de largeur nulle, centré au-dessus du titre */
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .tag {
+      position: relative;
+      flex: none;
+      width: clamp(230px, 34vw, 420px);
+      transform: translateY(-115%);
+      overflow: visible;
+    }
+    .tag * { fill: none; stroke: var(--white); stroke-width: 1.5; }
+    .tag .dot { fill: var(--white); stroke: none; }
+    .tag .dashed { stroke-dasharray: 5 4; animation: march 1.2s linear infinite; }   /* pointillés qui défilent */
+    .tag text {
+      fill: var(--white);
+      stroke: none;
+      font-family: "Unbounded", sans-serif;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+    }
+    @keyframes march { to { stroke-dashoffset: -9; } }
+
+    /* ============================================================
+       5. CADRE — crochets, pilules à flèches, textes verticaux, soleil, logo
+       ============================================================ */
+    .bracket {
+      position: absolute;
+      top: calc(var(--edge) + 44px);
+      bottom: calc(var(--edge) + 44px);
+      width: 14px;
+      border: var(--line);
+      z-index: 1;
+    }
+    .bracket.left  { left: var(--edge);  border-right: none; border-radius: 3px 0 0 3px; }
+    .bracket.right { right: var(--edge); border-left: none;  border-radius: 0 3px 3px 0; }
+
+    .pill {   /* les 4 pilules des coins, avec une flèche tournée vers le centre */
+      position: absolute;
+      z-index: 1;
+      width: 76px;
+      height: 28px;
+      border: var(--line);
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pill svg { width: 26px; height: 20px; stroke: var(--white); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .pill.tl { top: var(--edge);    left: var(--edge); }
+    .pill.tr { top: var(--edge);    right: var(--edge); }
+    .pill.bl { bottom: var(--edge); left: var(--edge); }
+    .pill.br { bottom: var(--edge); right: var(--edge); }
+    .pill.tl svg { transform: rotate(45deg); }
+    .pill.tr svg { transform: rotate(135deg); }
+    .pill.bl svg { transform: rotate(-45deg); }
+    .pill.br svg { transform: rotate(-135deg); }
+
+    .side {   /* textes verticaux le long des crochets */
+      position: absolute;
+      top: 50%;
+      z-index: 1;
+      writing-mode: vertical-rl;
+      font-size: 0.62rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      white-space: pre;
+    }
+    .side.left  { left: calc(var(--edge) + 36px);  transform: translateY(-50%) rotate(180deg); }
+    .side.right { right: calc(var(--edge) + 36px); transform: translateY(-50%); }
+
+    .burst {   /* petit soleil qui tourne en bas */
+      position: absolute;
+      left: 50%;
+      bottom: calc(var(--edge) + 62px);
+      width: 34px;
+      height: 34px;
+      transform: translateX(-50%);
+      z-index: 1;
+      animation: spin 24s linear infinite;
+    }
+    @keyframes spin { to { transform: translateX(-50%) rotate(360deg); } }
+
+    .brand-logo {   /* logo sous le soleil */
+      position: absolute;
+      bottom: calc(var(--edge) - 15px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 270px;
+      height: 66px;
+      object-fit: contain;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       6. DÉCOR — cadres pointillés avec relevés de matière
+       ============================================================ */
+    .box, .path { position: absolute; z-index: 1; }
+    .box {
+      border: var(--dash);
+      width: clamp(170px, 16vw, 250px);
+      padding: 12px 14px 6px;
+    }
+    .box.a { left: 11%;  top: 14%; }
+    .box.b { right: 11%; bottom: 14%; }
+    .box .hd {
+      font-size: 0.58rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      opacity: 0.85;
+      margin-bottom: 12px;
+    }
+    .path { z-index: 0; }   /* traits d'angle qui relient les cadres */
+    .path.a { right: 12%; top: 17%;    width: 20%; height: 13%; border-top: var(--dash);  border-right: var(--dash); }
+    .path.b { left: 19%;  bottom: 18%; width: 18%; height: 15%; border-left: var(--dash); border-bottom: var(--dash); }
+
+    .rd {   /* une ligne de relevé : nom + valeur + jauge */
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0 10px;
+      align-items: baseline;
+      margin-bottom: 9px;
+      font-size: clamp(0.5rem, 0.72vw, 0.64rem);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .rd .v { text-align: right; min-width: 7.5ch; }
+    .rd .bar { grid-column: 1 / -1; height: 2px; margin-top: 4px; background: rgba(255, 255, 255, 0.25); }
+    .rd .bar i { display: block; height: 100%; width: 50%; background: var(--white); }
+    .rd.glitch { transform: translateX(4px); text-shadow: -2px 0 var(--cyan), 2px 0 #fff; }
+
+    /* ============================================================
+       7. ZONE CENTRALE — apparaît après le clic
+          (carré vide, objet, croix, bouton, progression, succès)
+       ============================================================ */
+    .empty {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(16px, 2.4vw, 28px);
+      pointer-events: none;
+    }
+
+    /* Le carré : y apparaît l'objet, la croix ou le scan 3D */
+    .slot {
+      position: relative;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      opacity: 0;   /* révélé par l'animation d'ouverture */
+      width: clamp(90px, 9vw, 130px);
+      aspect-ratio: 1;
+      border: 3px solid var(--white);
+      border-radius: 22px;
+    }
+    .ingredient {   /* l'objet inséré (✦) */
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      opacity: 0;
+      transform: scale(.25) rotate(-20deg);
+      transition: opacity .3s, transform .45s cubic-bezier(.2, 1.6, .3, 1);
+    }
+    .ingredient.visible { opacity: 1; transform: scale(1) rotate(0); }
+
+    .slot-invalid {   /* croix « non clonable », dessinée avec deux barres */
+      position: absolute;
+      width: 52%;
+      aspect-ratio: 1;
+      left: 24%;
+      top: 24%;
+      opacity: 0;
+      transform: scale(.35) rotate(-20deg);
+      pointer-events: none;
+      transition: opacity .25s ease, transform .4s cubic-bezier(.2, 1.5, .3, 1);
+    }
+    .slot-invalid::before, .slot-invalid::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 5%;
+      width: 90%;
+      height: 5px;
+      background: var(--white);
+      border-radius: 5px;
+    }
+    .slot-invalid::before { transform: translateY(-50%) rotate(45deg); }
+    .slot-invalid::after  { transform: translateY(-50%) rotate(-45deg); }
+    .slot-invalid.visible { opacity: 1; transform: scale(1) rotate(0); }
+
+    .wire {   /* canvas du scan 3D, par-dessus le carré */
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      transition: opacity .25s;
+      pointer-events: none;
+    }
+    .wire.visible { opacity: 1; }
+
+    /* Bouton + progression + message de succès (sous le carré) */
+    .dup-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      min-height: 115px;
+      opacity: 0;
+      transition: opacity .25s;
+      pointer-events: none;
+    }
+    .dup-controls.visible { opacity: 1; pointer-events: auto; }
+
+    .dup-button {
+      background: white;
+      color: var(--blue);
+      border: 2px solid white;
+      padding: 14px 28px;
+      font: 900 clamp(.8rem, 1.2vw, 1rem) "Unbounded", sans-serif;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .2s, color .2s, transform .2s;
+    }
+    .dup-button:hover { background: transparent; color: white; transform: scale(1.04); }
+    .dup-button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 5px; }
+
+    .progress-wrap { width: min(420px, 78vw); display: none; text-align: center; }
+    .progress-wrap.visible { display: block; }
+    .progress-meta { display: flex; justify-content: space-between; font-size: .65rem; letter-spacing: .12em; margin-bottom: 9px; }
+    .progress-track { border: 2px solid white; height: 21px; padding: 3px; }
+    .progress-fill { background: white; height: 100%; width: 0%; transition: width .12s linear; }
+
+    .ad-message {
+      margin-top: 14px;
+      min-height: 3em;
+      max-width: min(520px, 80vw);
+      font-size: clamp(.55rem, .85vw, .75rem);
+      line-height: 1.6;
+      letter-spacing: .08em;
+      text-align: center;
+    }
+    .ad-message::before { content: var(--pub-label); color: var(--cyan); }   /* texte défini dans textes.js */
+
+    .success { display: none; text-align: center; font-size: clamp(.7rem, 1.1vw, .95rem); line-height: 1.7; letter-spacing: .08em; }
+    .success.visible { display: block; }
+
+    /* ============================================================
+       8. INDICATEUR TACTILE — main + ondes, sur l'écran d'accueil
+       ============================================================ */
+    .touch-hint {
+      position: fixed;
+      top: 17vh;   /* valeur de secours : le JS le recentre au-dessus de l'horloge */
+      left: 50%;
+      width: 54px;
+      height: 54px;
+      transform: translate(-50%, -50%);
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      z-index: 6;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity .24s ease, visibility .24s;
+    }
+    body.is-open .touch-hint { opacity: 0; visibility: hidden; }   /* masqué après le clic */
+
+    .touch-symbol { position: relative; width: 48px; height: 48px; display: block; }
+    .touch-symbol svg {
+      position: relative;
+      z-index: 2;
+      display: block;
+      width: 48px;
+      height: 48px;
+      fill: none;
+      stroke: var(--white);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .touch-ripple {   /* ondes qui partent du bout du doigt */
+      position: absolute;
+      z-index: 1;
+      top: 11px;
+      left: 21px;
+      width: 12px;
+      height: 12px;
+      border: 1.7px solid rgba(255, 255, 255, .85);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: touch-wave 2.2s ease-out infinite;
+    }
+    .touch-ripple:nth-child(2) { animation-delay: 1.1s; }
+    @keyframes touch-wave {
+      0%        { transform: translate(-50%, -50%) scale(.45); opacity: .9; }
+      80%, 100% { transform: translate(-50%, -50%) scale(6.5); opacity: 0; }
+    }
+
+    /* ============================================================
+       9. EMA — le personnage (tête + yeux + corps)
+          Les images sont placées en fond ; le JS (section B) les anime.
+       ============================================================ */
+    .ema-div {
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 200px;
+      transform: translate3d(100px, 100px, 0) scale(.5);
+      transform-origin: 50% 50%;
+      pointer-events: none;   /* ne gêne jamais les clics sur l'interface */
+      z-index: -10;           /* derrière tout le reste */
+      will-change: transform;
+    }
+    .head-div {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      height: 150px;
+      background: url('Tete.png') center / contain no-repeat;
+      transform-origin: center bottom;
+      will-change: transform;
+    }
+    .body-div {
+      height: 217px;
+      background: url('Corps.png') center / contain no-repeat;
+      transform-origin: center top;
+      will-change: transform;
+    }
+    .eye-div { display: block; height: 70px; width: auto; }
+
+    /* ============================================================
+       10. BULLE D'EMA — suit la tête, texte tapé lettre par lettre
+       ============================================================ */
     .ema-bubble {
       position: fixed;
       top: 0;
@@ -22,6 +549,7 @@
       will-change: transform;
     }
     .ema-bubble.on { visibility: visible; }
+
     .ema-bubble__box {
       position: relative;
       width: max-content;
@@ -31,8 +559,7 @@
       border: var(--line);
       border-radius: 16px;
     }
-    /* liseré pointillé intérieur, comme les cuves */
-    .ema-bubble__box::before {
+    .ema-bubble__box::before {   /* liseré pointillé intérieur */
       content: "";
       position: absolute;
       inset: 4px;
@@ -55,14 +582,15 @@
       line-height: 1.6;
       text-transform: uppercase;
     }
-    /* le texte fantôme réserve la taille finale : la bulle ne "saute" pas pendant la frappe */
+    /* Astuce : le texte « fantôme » (invisible) contient déjà la phrase complète
+       pour réserver la taille finale ; le texte « tapé » s'écrit par-dessus. */
     .ema-bubble__text .ghost { visibility: hidden; }
     .ema-bubble__text .typed { position: absolute; inset: 0; }
     .ema-bubble__text .typed::after { content: "_"; animation: blink 1s steps(1) infinite; }
-    /* queue de la bulle, pointe vers la tête */
-    .ema-bubble__tail {
+
+    .ema-bubble__tail {   /* la petite pointe, orientée vers la tête */
       position: absolute;
-      left: var(--tx, 50%);
+      left: var(--tx, 50%);   /* position horizontale réglée par le JS */
       bottom: -8px;
       width: 14px;
       height: 14px;
@@ -72,7 +600,7 @@
       border-bottom-right-radius: 3px;
       transform: translateX(-50%) rotate(45deg);
     }
-    .ema-bubble.below .ema-bubble__tail {
+    .ema-bubble.below .ema-bubble__tail {   /* bulle placée SOUS la tête : pointe vers le haut */
       bottom: auto;
       top: -8px;
       border-right: none;
@@ -82,473 +610,91 @@
       border-bottom-right-radius: 0;
       border-top-left-radius: 3px;
     }
-    @media (prefers-reduced-motion: reduce) {
-      .ema-bubble__text .typed::after { animation: none; }
-    }
-    :root {
-      --blue: #3a5cff;
-      --white: #ffffff;
-      --cyan: #8cf3ff;
-      --line: 2px solid var(--white);
-      --dash: 1.5px dashed rgba(255, 255, 255, 0.6);
-      --edge: 22px;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
-    html, body { height: 100%; }
-    body {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      background: var(--blue);
-      color: var(--white);
-      font-family: "Unbounded", "Arial Black", sans-serif;
-      cursor: pointer;
-    }
-    /* Grain sombre et animé */
-    body::after {
-      content: "";
-      position: absolute;
-      inset: -50%;
-      z-index: 2;
-      pointer-events: none;
-      opacity: 0.5;
-      animation: grain 0.8s steps(1) infinite;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 .04 0 0 0 0 .25 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    }
-    @keyframes grain {
-      0%   { transform: translate(0, 0); }
-      12%  { transform: translate(-7%, -11%); }
-      25%  { transform: translate(9%, 6%); }
-      37%  { transform: translate(-12%, 8%); }
-      50%  { transform: translate(6%, -13%); }
-      62%  { transform: translate(-4%, 12%); }
-      75%  { transform: translate(11%, -5%); }
-      87%  { transform: translate(-9%, -3%); }
-      100% { transform: translate(0, 0); }
-    }
-    /* ---------- Titre ---------- */
-    .title-wrap {
-      position: relative;
-      z-index: 1;
-      padding: clamp(1.2rem, 4vw, 3rem) clamp(1.5rem, 5vw, 4rem);
-    }
-    h1 {
-      position: relative;
-      font-weight: 900;
-      font-size: clamp(2rem, 10.5vw, 9rem);
-      line-height: 1;
-      letter-spacing: -0.03em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-    /* Petit TM en haut à droite du titre */
-    .tm {
-      position: absolute;
-      left: 100%;
-      top: 0.1em;
-      margin-left: 0.12em;
-      font-size: max(0.15em, 8px);
-      font-weight: 400;
-      letter-spacing: 0.06em;
-      line-height: 1;
-    }
-    /* Glitch : deux copies décalées qui apparaissent par à-coups */
-    h1::before, h1::after {
-      content: attr(data-text);
-      position: absolute;
-      left: 0;
-      top: 0;
-      opacity: 0;
-      pointer-events: none;
-    }
-    h1::before { color: var(--cyan); animation: glitch-a 4.3s infinite; }
-    h1::after  { color: var(--white); mix-blend-mode: screen; animation: glitch-b 3.1s infinite; }
-    @keyframes glitch-a {
-      0%, 88%, 100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translate(0); }
-      89% { opacity: 1; clip-path: inset(10% 0 62% 0); transform: translate(-0.05em, 0); }
-      91% { opacity: 1; clip-path: inset(58% 0 18% 0); transform: translate(0.04em, 0); }
-      93% { opacity: 1; clip-path: inset(32% 0 44% 0); transform: translate(-0.03em, 0); }
-      95% { opacity: 1; clip-path: inset(78% 0 4% 0);  transform: translate(0.05em, 0); }
-    }
-    @keyframes glitch-b {
-      0%, 80%, 100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translate(0); }
-      81% { opacity: 1; clip-path: inset(44% 0 38% 0); transform: translate(0.05em, 0); }
-      83% { opacity: 1; clip-path: inset(6% 0 80% 0);  transform: translate(-0.04em, 0); }
-      85% { opacity: 1; clip-path: inset(66% 0 12% 0); transform: translate(0.03em, 0); }
-    }
-    /* Barre de balayage glitch */
-    .scan {
-      position: absolute;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: rgba(255, 255, 255, 0.35);
-      z-index: 1;
-      opacity: 0;
-      pointer-events: none;
-      animation: scan 6.5s infinite;
-    }
-    @keyframes scan {
-      0%, 91%, 100% { opacity: 0; top: 30%; }
-      92% { opacity: 0.6; top: 38%; }
-      94% { opacity: 0.4; top: 57%; }
-      96% { opacity: 0.5; top: 71%; }
-      97% { opacity: 0; top: 71%; }
-    }
-    /* Croix aux coins du titre */
-    .plus { position: absolute; width: 20px; height: 20px; }
-    .plus::before, .plus::after { content: ""; position: absolute; background: var(--white); }
-    .plus::before { left: 9px; top: 0; width: 2px; height: 20px; }
-    .plus::after  { left: 0; top: 9px; width: 20px; height: 2px; }
-    .plus.tl { top: 0; left: 0; }
-    .plus.tr { top: 0; right: 0; }
-    .plus.bl { bottom: 0; left: 0; }
-    .plus.br { bottom: 0; right: 0; }
-    /* Étiquette en pointillés (horloge) */
-    .tag-pos {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 0;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-    }
-    .tag {
-      position: relative;
-      flex: none;
-      width: clamp(230px, 34vw, 420px);
-      transform: translateY(-115%);
-      overflow: visible;
-    }
-    .tag * { fill: none; stroke: var(--white); stroke-width: 1.5; }
-    .tag .dot { fill: var(--white); stroke: none; }
-    .tag .dashed { stroke-dasharray: 5 4; animation: march 1.2s linear infinite; }
-    .tag text { fill: var(--white); stroke: none; font-family: "Unbounded", sans-serif; font-weight: 400; letter-spacing: 0.08em; }
-    @keyframes march { to { stroke-dashoffset: -9; } }
-    /* ---------- Cadre ---------- */
-    .bracket {
-      position: absolute;
-      top: calc(var(--edge) + 44px);
-      bottom: calc(var(--edge) + 44px);
-      width: 14px;
-      border: var(--line);
-      z-index: 1;
-    }
-    .bracket.left  { left: var(--edge);  border-right: none; border-radius: 3px 0 0 3px; }
-    .bracket.right { right: var(--edge); border-left: none;  border-radius: 0 3px 3px 0; }
-    .pill {
-      position: absolute;
-      z-index: 1;
-      width: 76px;
-      height: 28px;
-      border: var(--line);
-      border-radius: 999px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .pill svg { width: 26px; height: 20px; stroke: var(--white); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .pill.tl { top: var(--edge); left: var(--edge); }
-    .pill.tr { top: var(--edge); right: var(--edge); }
-    .pill.bl { bottom: var(--edge); left: var(--edge); }
-    .pill.br { bottom: var(--edge); right: var(--edge); }
-    .pill.tl svg { transform: rotate(45deg); }
-    .pill.tr svg { transform: rotate(135deg); }
-    .pill.bl svg { transform: rotate(-45deg); }
-    .pill.br svg { transform: rotate(-135deg); }
-    /* Textes verticaux le long du cadre */
-    .side {
-      position: absolute;
-      top: 50%;
-      z-index: 1;
-      writing-mode: vertical-rl;
-      font-size: 0.62rem;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-    .side.left  { left: calc(var(--edge) + 36px);  transform: translateY(-50%) rotate(180deg); }
-    .side.right { right: calc(var(--edge) + 36px); transform: translateY(-50%); }
-    /* ---------- Décor pointillé + relevés ---------- */
-    .box, .path { position: absolute; z-index: 1; }
-    .box {
-      border: var(--dash);
-      width: clamp(170px, 16vw, 250px);
-      padding: 12px 14px 6px;
-    }
-    .box.a { left: 11%; top: 14%; }
-    .box.b { right: 11%; bottom: 14%; }
-    .box .hd {
-      font-size: 0.58rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      opacity: 0.85;
-      margin-bottom: 12px;
-    }
-    .path { z-index: 0; }
-    .path.a { right: 12%; top: 17%; width: 20%; height: 13%; border-top: var(--dash); border-right: var(--dash); }
-    .path.b { left: 19%; bottom: 18%; width: 18%; height: 15%; border-left: var(--dash); border-bottom: var(--dash); }
-    .rd {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 0 10px;
-      align-items: baseline;
-      margin-bottom: 9px;
-      font-size: clamp(0.5rem, 0.72vw, 0.64rem);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-    .rd .v { text-align: right; min-width: 7.5ch; }
-    .rd .bar { grid-column: 1 / -1; height: 2px; margin-top: 4px; background: rgba(255, 255, 255, 0.25); }
-    .rd .bar i { display: block; height: 100%; width: 50%; background: var(--white); }
-    .rd.glitch { transform: translateX(4px); text-shadow: -2px 0 var(--cyan), 2px 0 #fff; }
-    /* ---------- État "aucun ingrédient" (après le clic) ---------- */
-    .empty {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: clamp(16px, 2.4vw, 28px);
-      pointer-events: none;
-    }
-    .empty .msg {
-      opacity: 0;
-      max-width: 80vw;
-      text-align: center;
-      font-weight: 400;
-      font-size: clamp(0.68rem, 1.05vw, 0.95rem);
-      letter-spacing: 0.22em;
-      line-height: 1.7;
-      text-transform: uppercase;
-    }
-    .empty .msg::after { content: "_"; animation: blink 1s steps(1) infinite; }
-    .empty .slot {
-      opacity: 0;
-      width: clamp(90px, 9vw, 130px);
-      aspect-ratio: 1;
-      border: 3px solid var(--white);
-      border-radius: 22px;
-    }
-    /* Contrôles de duplication */
-    .empty .slot { display: grid; place-items: center; position: relative; overflow: hidden; transition: border-color .25s; }
-    .ingredient { font-size: clamp(2.5rem, 5vw, 4rem); opacity: 0; transform: scale(.25) rotate(-20deg); transition: opacity .3s, transform .45s cubic-bezier(.2,1.6,.3,1); }
-    .ingredient.visible { opacity: 1; transform: scale(1) rotate(0); }
-    .dup-controls { display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 115px; opacity: 0; transition: opacity .25s; pointer-events: none; }
-    .dup-controls.visible { opacity: 1; pointer-events: auto; }
-    .dup-button { background: white; color: var(--blue); border: 2px solid white; padding: 14px 28px; font: 900 clamp(.8rem,1.2vw,1rem) "Unbounded",sans-serif; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; transition: background .2s, color .2s, transform .2s; }
-    .dup-button:hover { background: transparent; color: white; transform: scale(1.04); }
-    .dup-button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 5px; }
-    .progress-wrap { width: min(420px,78vw); display: none; text-align: center; }
-    .progress-wrap.visible { display: block; }
-    .progress-meta { display: flex; justify-content: space-between; font-size: .65rem; letter-spacing: .12em; margin-bottom: 9px; }
-    .progress-track { border: 2px solid white; height: 21px; padding: 3px; }
-    .progress-fill { background: white; height: 100%; width: 0%; transition: width .12s linear; }
-    .ad-message { margin-top: 14px; min-height: 3em; max-width: min(520px, 80vw); font-size: clamp(.55rem,.85vw,.75rem); line-height: 1.6; letter-spacing: .08em; text-align: center; }
-    .ad-message::before { content: 'PUB // '; color: var(--cyan); }
-    .success { display: none; text-align: center; font-size: clamp(.7rem,1.1vw,.95rem); line-height: 1.7; letter-spacing: .08em; }
-    .success.visible { display: block; }
-    @keyframes blink { 50% { opacity: 0; } }
-    /* ---------- Soleil en bas ---------- */
-    .burst {
-      position: absolute;
-      left: 50%;
-      bottom: calc(var(--edge) + 62px);
-      width: 34px;
-      height: 34px;
-      transform: translateX(-50%);
-      z-index: 1;
-      animation: spin 24s linear infinite;
-    }
-    @keyframes spin { to { transform: translateX(-50%) rotate(360deg); } }
-    /* Logo placé sous le soleil : remplacer logo.png par ton fichier */
-    .brand-logo {
-      position: absolute;
-      bottom: calc(var(--edge) - 15px);;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 270px;
-      height: 66px;
-      object-fit: contain;
-      z-index: 1;
-      pointer-events: none;
-    }
+
+    /* ============================================================
+       11. RESPONSIVE + ACCESSIBILITÉ
+       ============================================================ */
     @media (max-width: 900px), (max-height: 640px) {
-      .box, .path { display: none; }
+      .box, .path { display: none; }   /* on masque le décor sur petits écrans */
     }
     @media (max-width: 640px) {
       .pill { width: 60px; height: 24px; }
       .side { font-size: 0.5rem; }
     }
+    /* Si l'utilisateur a demandé moins d'animations : on les coupe */
     @media (prefers-reduced-motion: reduce) {
-      .tag .dashed, .burst, body::after, h1::before, h1::after, .scan, .empty .msg::after { animation: none; }
-    }
-    /* Personnage animé superposé à l'interface */
-    .ema-div {
-      position: fixed;
-      top: 0;
-      left: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-      width: 200px;
-      transform: translate3d(100px, 100px, 0) scale(.5);
-      transform-origin: 50% 50%;
-      pointer-events: none;
-      z-index: -10;
-      will-change: transform;
-    }
-    .head-div {
-      background: url('Tete.png') center / contain no-repeat;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 15px;
-      height: 150px;
-      transform-origin: center bottom;
-      will-change: transform;
-    }
-    .body-div {
-      background: url('Corps.png') center / contain no-repeat;
-      height: 217px;
-      transform-origin: center top;
-      will-change: transform;
-    }
-    .eye-div { display: block; height: 70px; width: auto; }
-
-    /* Indicateur tactile centré dans la zone libre au-dessus de l'horloge. */
-    .touch-hint {
-      position: fixed;
-      top: 17vh; /* secours avant le calcul de la position réelle de l'horloge */
-      left: 50%;
-      width: 54px;
-      height: 54px;
-      transform: translate(-50%, -50%);
-      display: grid;
-      place-items: center;
-      pointer-events: none;
-      z-index: 6;
-      opacity: 1;
-      visibility: visible;
-      transition: opacity .24s ease, visibility .24s;
-    }
-    body.is-open .touch-hint { opacity: 0; visibility: hidden; }
-    .touch-symbol { position: relative; width: 48px; height: 48px; display: block; }
-    .touch-symbol svg {
-      position: relative;
-      z-index: 2;
-      display: block;
-      width: 48px;
-      height: 48px;
-      fill: none;
-      stroke: var(--white);
-      stroke-width: 1.6;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .touch-ripple {
-      position: absolute;
-      z-index: 1;
-      top: 11px;
-      left: 21px;
-      width: 12px;
-      height: 12px;
-      border: 1.7px solid rgba(255,255,255,.85);
-      border-radius: 50%;
-      pointer-events: none;
-      animation: touch-wave 2.2s ease-out infinite;
-    }
-    .touch-ripple:nth-child(2) { animation-delay: 1.1s; }
-    @keyframes touch-wave {
-      0% { transform: translate(-50%, -50%) scale(.45); opacity: .9; }
-      80%, 100% { transform: translate(-50%, -50%) scale(6.5); opacity: 0; }
-    }
-    .wire { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .25s; pointer-events: none; }
-    .wire.visible { opacity: 1; }
-    /* La croix utilise deux barres : toujours visible sans police ni image externe. */
-    .slot-invalid {
-      position: absolute;
-      width: 52%;
-      aspect-ratio: 1;
-      left: 24%;
-      top: 24%;
-      opacity: 0;
-      transform: scale(.35) rotate(-20deg);
-      pointer-events: none;
-      transition: opacity .25s ease, transform .4s cubic-bezier(.2,1.5,.3,1);
-    }
-    .slot-invalid::before, .slot-invalid::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 5%;
-      width: 90%;
-      height: 5px;
-      background: var(--white);
-      border-radius: 5px;
-    }
-    .slot-invalid::before { transform: translateY(-50%) rotate(45deg); }
-    .slot-invalid::after { transform: translateY(-50%) rotate(-45deg); }
-    .slot-invalid.visible { opacity: 1; transform: scale(1) rotate(0); }
-    @media (prefers-reduced-motion: reduce) {
+      .tag .dashed, .burst, body::after, h1::before, h1::after, .scan,
+      .ema-bubble__text .typed::after { animation: none; }
       .touch-ripple { animation: none; opacity: .35; }
       .touch-hint, .slot-invalid { transition: none; }
     }
-</style>
+  </style>
 </head>
-<body>
-  <div class="touch-hint" aria-label="Toucher l’écran pour commencer">
-        <span class="touch-symbol">
-          <span class="touch-ripple"></span><span class="touch-ripple"></span>
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M12 15V7a2 2 0 0 1 4 0v8-3a2 2 0 0 1 4 0v3-1a2 2 0 0 1 4 0v3a2 2 0 0 1 4 0v5c0 4-3.4 7-7.5 7H16c-2.6 0-4.3-1-5.8-3.1L6 20.5a2.1 2.1 0 0 1 3.2-2.7L12 20"/>
-          </svg>
-        </span>
-      </div>
 
-  <!-- décor + relevés de matière -->
-  <div class="box a"><div class="hd">Matières · cuve A</div><div id="mat-a"></div></div>
-  <div class="box b"><div class="hd">Traces · cuve B</div><div id="mat-b"></div></div>
+<body>
+
+  <!-- ===== Indicateur tactile (écran d'accueil) ===== -->
+  <div class="touch-hint" data-texte-aria="accueilAria">
+    <span class="touch-symbol">
+      <span class="touch-ripple"></span><span class="touch-ripple"></span>
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M12 15V7a2 2 0 0 1 4 0v8-3a2 2 0 0 1 4 0v3-1a2 2 0 0 1 4 0v3a2 2 0 0 1 4 0v5c0 4-3.4 7-7.5 7H16c-2.6 0-4.3-1-5.8-3.1L6 20.5a2.1 2.1 0 0 1 3.2-2.7L12 20"/>
+      </svg>
+    </span>
+  </div>
+
+  <!-- ===== Décor : cadres de relevés (lignes remplies par le JS depuis textes.js) ===== -->
+  <div class="box a"><div class="hd" data-texte="releves.cuveA.titre"></div><div id="mat-a"></div></div>
+  <div class="box b"><div class="hd" data-texte="releves.cuveB.titre"></div><div id="mat-b"></div></div>
   <div class="path a"></div>
   <div class="path b"></div>
-  <!-- cadre -->
+
+  <!-- ===== Cadre : crochets, pilules, textes verticaux, barre de glitch ===== -->
   <div class="bracket left"></div>
   <div class="bracket right"></div>
   <div class="pill tl"><svg viewBox="0 0 28 20"><path d="M2 10h22M16 3l8 7-8 7"/></svg></div>
   <div class="pill tr"><svg viewBox="0 0 28 20"><path d="M2 10h22M16 3l8 7-8 7"/></svg></div>
   <div class="pill bl"><svg viewBox="0 0 28 20"><path d="M2 10h22M16 3l8 7-8 7"/></svg></div>
   <div class="pill br"><svg viewBox="0 0 28 20"><path d="M2 10h22M16 3l8 7-8 7"/></svg></div>
-  <div class="side left">Cuve 03 — statut : actif</div>
-  <div class="side right">Température <span id="temp">37.2</span> °C</div>
+  <div class="side left" data-texte="cadre.coteGauche"></div>
+  <div class="side right"><span data-texte="cadre.coteDroitAvant"></span><span id="temp">37.2</span><span data-texte="cadre.coteDroitApres"></span></div>
   <div class="scan"></div>
-  <!-- état vide (révélé au clic) -->
+
+  <!-- ===== Zone centrale (révélée au clic) ===== -->
   <div class="empty">
-    <div class="msg">En attente d'un objet à dupliquer</div>
-    <div class="slot"><canvas class="wire" id="wire"></canvas><span class="ingredient" aria-hidden="true">✦</span><span class="slot-invalid" aria-hidden="true"></span></div>
+    <!-- Le carré où l'objet est « inséré » -->
+    <div class="slot">
+      <canvas class="wire" id="wire"></canvas>
+      <span class="ingredient" aria-hidden="true">✦</span>
+      <span class="slot-invalid" aria-hidden="true"></span>
+    </div>
+
+    <!-- Bouton, progression, message de fin -->
     <div class="dup-controls" id="dup-controls">
-      <button type="button" class="dup-button" id="dup-button" hidden>DUPLIQUER</button>
-      <div class="progress-wrap" id="progress-wrap" role="progressbar" aria-label="Progression de la duplication" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-        <div class="progress-meta"><span>DUPLICATION EN COURS</span><span id="progress-value">0%</span></div>
+      <button type="button" class="dup-button" id="dup-button" data-texte="bouton" hidden></button>
+
+      <div class="progress-wrap" id="progress-wrap" role="progressbar" data-texte-aria="progression.aria" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-meta"><span data-texte="progression.libelle"></span><span id="progress-value">0%</span></div>
         <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
         <div class="ad-message" id="ad-message" aria-live="polite"></div>
       </div>
-      <div class="success" id="success" role="status">✦ DUPLICATION TERMINÉE ! ✦<br><small>Merci de récupérer l'objet dans le bac inférieur.</small><br> <small>N'oubliez pas l'objet original !</small></div>
+
+      <div class="success" id="success" role="status">
+        <span data-texte="succes.titre"></span><br>
+        <small data-texte="succes.ligne1"></small><br>
+        <small data-texte="succes.ligne2"></small>
+      </div>
     </div>
   </div>
-  <!-- titre -->
+
+  <!-- ===== Titre + horloge ===== -->
   <div class="title-wrap">
     <div class="tag-pos">
       <svg class="tag" viewBox="0 0 360 40" aria-hidden="true">
         <rect class="dashed" x="125" y="8" width="110" height="24" rx="4"/>
         <polyline points="125,20 40,20 40,36"/>
         <polyline points="235,20 320,20 320,36"/>
-        <circle class="dot" cx="40" cy="37" r="3.5"/>
+        <circle class="dot" cx="40"  cy="37" r="3.5"/>
         <circle class="dot" cx="320" cy="37" r="3.5"/>
         <text id="clock" x="180" y="24.5" text-anchor="middle" font-size="10.5">00:00:00</text>
       </svg>
@@ -557,9 +703,10 @@
     <span class="plus tr"></span>
     <span class="plus bl"></span>
     <span class="plus br"></span>
-    <h1 data-text="DUPLICATOR">DUPLICATOR<span class="tm">TM</span></h1>
+    <h1 id="titre"><span data-texte="titre"></span><span class="tm" data-texte="marque"></span></h1>
   </div>
-  <!-- soleil -->
+
+  <!-- ===== Soleil + logo (bas de l'écran) ===== -->
   <svg class="burst" viewBox="0 0 34 34" aria-hidden="true" stroke="#fff" stroke-width="1.5" stroke-linecap="round">
     <g>
       <line x1="17" y1="2" x2="17" y2="10"/><line x1="17" y1="24" x2="17" y2="32"/>
@@ -572,9 +719,10 @@
       <line x1="30.5" y1="9.5" x2="23.5" y2="12.5"/><line x1="10.5" y1="21.5" x2="3.5" y2="24.5"/>
     </g>
   </svg>
-  <!-- Mets ton logo (PNG, SVG ou WebP) dans le même dossier sous le nom logo.png -->
-  <img class="brand-logo" src="logo.png" alt="Logo" onerror="this.style.display='none'" />
-  <!-- Personnage mobile, non cliquable pour préserver les contrôles DUPLICATOR -->
+  <!-- Logo -->
+  <img class="brand-logo" src="logo.png" data-texte-alt="logoAlt" onerror="this.style.display='none'" />
+
+  <!-- ===== EMA : personnage animé (non cliquable) ===== -->
   <div class="ema-div" aria-hidden="true">
     <div class="head-div">
       <img src="Yeux.png" alt="" class="eye-div" />
@@ -582,201 +730,594 @@
     </div>
     <div class="body-div"></div>
   </div>
-    <!-- Bulle de dialogue d'EMA -->
+
+  <!-- ===== Bulle de dialogue d'EMA ===== -->
   <div class="ema-bubble" id="ema-bubble" aria-live="polite">
     <div class="ema-bubble__box">
-      <div class="ema-bubble__who">EMA //</div>
+      <div class="ema-bubble__who" data-texte="bulle.nom"></div>
       <div class="ema-bubble__text">
         <span class="ghost"></span><span class="typed"></span>
       </div>
       <span class="ema-bubble__tail"></span>
     </div>
   </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+  <!-- GSAP : bibliothèque d'animation utilisée par les sections B et C -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+
+  <!-- ================================================================
+       0. TEXTES — remplit la page avec le contenu de textes.js
+       Rien à modifier ici : changez les textes dans textes.js.
+       ================================================================ -->
   <script>
-    // [nom, quantité, unité, décimales, remplissage de la jauge en %]
-    const MATS = {
-      "mat-a": [
-        ["Carbone",   18.5, "kg", 1, 72],
-        ["Eau",       43.2, "L",  1, 90],
-        ["Azote",      3.1, "kg", 2, 38],
-        ["Calcium",    1.1, "kg", 2, 24],
-        ["Phosphore",  0.8, "kg", 2, 31]
-      ],
-      "mat-b": [
-        ["ADN",  0.82, "g", 2, 12],
-        ["Fer",  6.4,  "g", 1, 47],
-        ["Zinc", 2.3,  "g", 1, 29]
-      ]
+    if (!window.TEXTES) {
+      document.body.innerHTML =
+        '<p style="padding:2rem;font:16px monospace;user-select:text">' +
+        'Fichier « textes.js » introuvable : placez-le dans le même dossier que ce fichier.</p>';
+      throw new Error("textes.js introuvable");
+    }
+
+    // Lit une valeur à partir d'un chemin, ex. t("bulle.attente")
+    function t(path) {
+      return path.split(".").reduce((obj, key) => (obj == null ? obj : obj[key]), window.TEXTES);
+    }
+
+    // Textes affichés
+    document.querySelectorAll("[data-texte]").forEach(el => { el.textContent = t(el.dataset.texte) ?? ""; });
+    // Descriptions pour lecteurs d'écran
+    document.querySelectorAll("[data-texte-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.texteAria) ?? ""));
+    // Textes alternatifs d'images
+    document.querySelectorAll("[data-texte-alt]").forEach(el => el.setAttribute("alt", t(el.dataset.texteAlt) ?? ""));
+
+    // Éléments particuliers
+    document.title = TEXTES.titrePage;
+    document.getElementById("titre").setAttribute("data-text", TEXTES.titre);   // copie utilisée par l'effet glitch
+    document.documentElement.style.setProperty("--pub-label", JSON.stringify(TEXTES.prefixePub));
+  </script>
+
+
+  <!-- ================================================================
+       A. DÉCOR — horloge, température, relevés de matière
+       ================================================================ -->
+  <script>
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Relevés affichés dans les deux cadres (définis dans textes.js).
+    // Format : [nom, quantité, unité, nb de décimales, remplissage de la jauge en %]
+    const MATERIALS = {
+      "mat-a": TEXTES.releves.cuveA.lignes,
+      "mat-b": TEXTES.releves.cuveB.lignes
     };
-    const rows = [];
-    // Relevés fixes (les quantités et les jauges ne bougent plus)
-    Object.entries(MATS).forEach(([id, list]) => {
-      const host = document.getElementById(id);
-      list.forEach(([name, qty, unit, dec, fill]) => {
-        const el = document.createElement("div");
-        el.className = "rd";
-        el.innerHTML =
-          '<span class="n">' + name + '</span>' +
-          '<span class="v">' + qty.toFixed(dec) + ' ' + unit + '</span>' +
-          '<div class="bar"><i style="width:' + fill + '%"></i></div>';
-        host.appendChild(el);
-        rows.push({ el });
+
+    // Construit les lignes HTML des relevés (valeurs fixes, elles ne bougent pas)
+    const readoutRows = [];
+    Object.entries(MATERIALS).forEach(([containerId, list]) => {
+      const container = document.getElementById(containerId);
+      list.forEach(([name, qty, unit, decimals, fillPercent]) => {
+        const row = document.createElement("div");
+        row.className = "rd";
+        const n = document.createElement("span");
+        n.className = "n";
+        n.textContent = name;
+        const v = document.createElement("span");
+        v.className = "v";
+        v.textContent = qty.toFixed(decimals) + " " + unit;
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        bar.innerHTML = '<i style="width:' + fillPercent + '%"></i>';
+        row.append(n, v, bar);
+        container.appendChild(row);
+        readoutRows.push(row);
       });
     });
-    function tickTemp() {
-      document.getElementById("temp").textContent = (37.2 + (Math.random() - 0.5) * 0.8).toFixed(1);
-    }
-    function tickClock() {
-      const d = new Date();
-      const p = n => String(n).padStart(2, "0");
+
+    // Horloge (heure locale, mise à jour chaque seconde)
+    function updateClock() {
+      const now = new Date();
+      const two = n => String(n).padStart(2, "0");
       document.getElementById("clock").textContent =
-        p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+        two(now.getHours()) + ":" + two(now.getMinutes()) + ":" + two(now.getSeconds());
     }
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    tickClock();
-    setInterval(tickClock, 1000);
-    if (!reduced) {
-      setInterval(tickTemp, 1200);
-      // petits glitchs aléatoires sur une ligne de relevé
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Température : petite variation aléatoire autour de 37,2 °C
+    function updateTemperature() {
+      const value = 37.2 + (Math.random() - 0.5) * 0.8;
+      document.getElementById("temp").textContent = value.toFixed(1);
+    }
+
+    if (!prefersReducedMotion) {
+      setInterval(updateTemperature, 1200);
+      // Toutes les 3,5 s, une ligne de relevé "glitche" pendant 150 ms
       setInterval(() => {
-        const r = rows[Math.floor(Math.random() * rows.length)];
-        r.el.classList.add("glitch");
-        setTimeout(() => r.el.classList.remove("glitch"), 150);
+        const row = readoutRows[Math.floor(Math.random() * readoutRows.length)];
+        row.classList.add("glitch");
+        setTimeout(() => row.classList.remove("glitch"), 150);
       }, 3500);
     }
-    /* ---------- Animation au clic (GSAP) ---------- */
-    if (window.gsap) {
-      const wrap = document.querySelector(".title-wrap");
-      const tagPos = document.querySelector(".tag-pos");
-      const tagSvg = document.querySelector(".tag");
-        const touchHint = document.querySelector(".touch-hint");
-        function positionTouchHint() {
-          // Milieu exact de l'espace situé entre le haut de l'écran et l'horloge.
-          const clockTop = tagSvg.getBoundingClientRect().top;
-          const center = Math.max(48, clockTop / 2);
-          touchHint.style.top = center + "px";
-        }
-        requestAnimationFrame(positionTouchHint);
-        window.addEventListener("load", () => requestAnimationFrame(positionTouchHint));
-        document.fonts?.ready.then(() => requestAnimationFrame(positionTouchHint));
+  </script>
 
-      const boxes = [...document.querySelectorAll(".box")];
-      const msg = document.querySelector(".empty .msg");
-      const slot = document.querySelector(".empty .slot");
-      gsap.set(tagPos, { transformOrigin: "50% 0%" });
-      gsap.set(msg, { opacity: 0, y: 10 });
-      gsap.set(slot, { opacity: 0, scale: 0.6 });
-      const controls = document.getElementById("dup-controls");
-      const ingredient = document.querySelector(".ingredient");
-        const invalidMark = document.querySelector(".slot-invalid");
-      const dupButton = document.getElementById("dup-button");
-      const progressWrap = document.getElementById("progress-wrap");
-      const progressFill = document.getElementById("progress-fill");
-      const progressValue = document.getElementById("progress-value");
-      const adMessage = document.getElementById("ad-message");
-      const success = document.getElementById("success");
-      // ---------- Bulle d'EMA ----------
-      const bubble = document.getElementById("ema-bubble");
-      const bubbleBox = bubble.querySelector(".ema-bubble__box");
-      const bubbleGhost = bubble.querySelector(".ghost");
-      const bubbleTyped = bubble.querySelector(".typed");
-      const emaHead = document.querySelector(".head-div");
-      let bubbleOn = false;
-      let typeTimer = null;
 
-      function say(text) {
-        if (!screenReady) return;            // pas de message pendant le retour / le sommeil
-        bubbleOn = true;
-        bubble.classList.add("on");
-        clearInterval(typeTimer);
-        gsap.killTweensOf(bubbleBox);
-        bubbleGhost.textContent = text + "_"; // réserve aussi la place du curseur
-        bubbleTyped.textContent = "";
-        if (reduced) {
-          gsap.set(bubbleBox, { scale: 1, opacity: 1 });
-          bubbleTyped.textContent = text;
-          return;
-        }
-        let i = 0;
-        typeTimer = setInterval(() => {
-          bubbleTyped.textContent = text.slice(0, ++i);
-          if (i >= text.length) clearInterval(typeTimer);
-        }, 28);
-        gsap.fromTo(bubbleBox,
-          { scale: 0.6, opacity: 0 },
-          { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(2)" });
+  <!-- ================================================================
+       B. PERSONNAGE EMA — mouvement, réveil/sommeil, émotions
+       Expose window.emaController = { wake, sleep, react }
+       (utilisé par la section C)
+       ================================================================ -->
+  <script>
+  (() => {
+    // ---------- Éléments ----------
+    const ema   = document.querySelector('.ema-div');
+    const head  = ema.querySelector('.head-div');
+    const body  = ema.querySelector('.body-div');
+    const eyes  = [...ema.querySelectorAll('.eye-div')];
+
+    // ---------- Réglages ----------
+    const CONFIG = {
+      acceleration: 2.8,    // plus c'est grand, plus EMA rejoint vite le doigt/la souris
+      maxSpeed: 1650,       // vitesse maximale (px/s)
+      maxTilt: 27,          // inclinaison maximale du corps (degrés)
+      tiltSmoothness: 15    // fluidité de l'inclinaison
+    };
+    const SCALE_NORMAL = 0.5;       // taille normale d'EMA
+    const SCALE_SMALL  = 0.44;      // taille "écrasée" quand on clique dessus
+    const JOY_MIN_HOLD = 0.5;       // durée minimale de l'état "content" (s)
+    const JOY_ELASTIC  = 'elastic.out(1, 0.45)';
+    const SLEEP_HEAD_Y = 32;        // tête abaissée pendant le sommeil
+    // Pendant le sommeil le corps est retourné (180°) ; son pivot est en haut,
+    // on le descend donc de sa hauteur pour que la tête reste posée dessus.
+    const SLEEP_BODY_Y = 200;
+
+    // ---------- État ----------
+    // Position de repos : centre de l'écran
+    const homePosition = { x: (innerWidth - 100) / 2, y: (innerHeight + 210) / 2 };
+    const position = { ...homePosition, vx: 0, vy: 0 };   // position actuelle + vitesse
+    const target   = { ...homePosition };                 // destination (le doigt/la souris)
+
+    // "pose" = valeurs animées par GSAP, lues à chaque image par la boucle principale
+    const pose = {
+      headY: SLEEP_HEAD_Y, bodyRotation: 180, bodyY: SLEEP_BODY_Y,  // sommeil
+      eyesOpen: 0,                                                  // 0 = fermés, 1 = ouverts
+      happy: 0, sad: 0, shake: 0, hop: 0                            // émotions
+    };
+
+    // Valeurs lissées (pour des mouvements fluides)
+    let bodyTilt = 0, headTilt = 0, headAdvance = 0, eyeX = 0, eyeY = 0;
+    let lastTime = performance.now();
+
+    let awake = false;        // EMA est-elle réveillée ?
+    let isHolding = false;    // le bouton de la souris/le doigt est-il enfoncé ?
+    let poseTimeline = null;  // animation de réveil / sommeil
+    let moodTimeline = null;  // animation d'émotion (happy / sad)
+    let joyTween = null, joyRelease = null, joyActive = false, joyStart = 0;
+
+    const isReducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ---------- Fonctions de réglage rapides (plus performantes que gsap.set) ----------
+    // Le point d'origine du scale est au centre : on compense pour positionner par le coin.
+    const originFix = () => ({ x: ema.offsetWidth * 0.25, y: ema.offsetHeight * 0.25 });
+    const setEmaX = gsap.quickSetter(ema, 'x', 'px');
+    const setEmaY = gsap.quickSetter(ema, 'y', 'px');
+    const moveX = x => setEmaX(x - originFix().x);
+    const moveY = y => setEmaY(y - originFix().y);
+
+    const setBodyRotation = gsap.quickSetter(body, 'rotation', 'deg');
+    const setBodyY        = gsap.quickSetter(body, 'y', 'px');
+    const setHeadRotation = gsap.quickSetter(head, 'rotation', 'deg');
+    const setHeadX        = gsap.quickSetter(head, 'x', 'px');
+    const setHeadY        = gsap.quickSetter(head, 'y', 'px');
+    const setEyeScaleY    = eyes.map(eye => gsap.quickSetter(eye, 'scaleY'));
+    const eyeSetters      = eyes.map((eye, i) => ({
+      x: gsap.quickSetter(eye, 'x', 'px'),
+      y: gsap.quickSetter(eye, 'y', 'px'),
+      r: gsap.quickSetter(eye, 'rotation', 'deg'),
+      dir: i === 0 ? -1 : 1      // œil gauche / droit : sens de rotation opposé
+    }));
+
+    // ---------- Pose initiale : endormie (yeux clos, corps retourné, tête baissée) ----------
+    gsap.set(ema, { x: position.x - originFix().x, y: position.y - originFix().y, scale: SCALE_NORMAL });
+    gsap.set(eyes, { transformOrigin: '50% 50%', scaleY: 0.06 });
+    gsap.set(body, { rotation: 180, y: SLEEP_BODY_Y });
+    gsap.set(head, { y: SLEEP_HEAD_Y });
+
+    // ---------- Yeux « contents » : on ne garde que la moitié haute → forme « ^ ^ » ----------
+    function applyHappyEyes() {
+      const clip = 'inset(0% 0% ' + (pose.happy * 50) + '% 0%)';
+      eyes.forEach(eye => { eye.style.clipPath = clip; });
+    }
+
+    // Remet toutes les émotions à zéro
+    function resetEmotions() {
+      joyTween?.kill();
+      joyRelease?.kill();
+      moodTimeline?.kill();
+      joyActive = false;
+      pose.happy = pose.sad = pose.shake = pose.hop = 0;
+      applyHappyEyes();
+      gsap.set(ema, { scale: SCALE_NORMAL });
+    }
+
+    // ---------- Interaction : déplacement vers le pointeur ----------
+    const isControl = el => !!el.closest('button, a, input, select, textarea');   // ne pas bouger EMA en cliquant sur un bouton
+    const isOnEma = event => {
+      const r = ema.getBoundingClientRect();
+      return event.clientX >= r.left && event.clientX <= r.right &&
+             event.clientY >= r.top  && event.clientY <= r.bottom;
+    };
+    const updateTarget = event => {
+      target.x = event.clientX - 50;
+      target.y = event.clientY - 90;
+    };
+
+    addEventListener('pointerdown', event => {
+      if (!awake || event.button !== 0 || isControl(event.target)) return;
+      isHolding = true;
+      updateTarget(event);
+      if (isOnEma(event)) joyDown();
+    });
+    addEventListener('pointermove', event => { if (awake && isHolding) updateTarget(event); });
+
+    const release = () => { isHolding = false; joyUp(); };
+    ['pointerup', 'pointercancel', 'blur'].forEach(name => addEventListener(name, release));
+
+    // ---------- Joie quand on appuie sur EMA : elle rétrécit et ferme les yeux contents ----------
+    function joyDown() {
+      joyRelease?.kill();
+      joyTween?.kill();
+      joyActive = true;
+      joyStart = performance.now();
+      joyTween = gsap.timeline()
+        .to(ema,  { scale: SCALE_SMALL, duration: isReducedMotion() ? 0.01 : 0.45, ease: JOY_ELASTIC }, 0)
+        .to(pose, { happy: 1, duration: 0.14, ease: 'power2.out', onUpdate: applyHappyEyes }, 0);
+    }
+    function joyUp() {
+      if (!joyActive) return;
+      const elapsed = (performance.now() - joyStart) / 1000;
+      joyRelease?.kill();
+      // On attend au minimum JOY_MIN_HOLD secondes avant de revenir à la normale
+      joyRelease = gsap.delayedCall(Math.max(0, JOY_MIN_HOLD - elapsed), () => {
+        joyActive = false;
+        joyTween?.kill();
+        joyTween = gsap.timeline()
+          .to(ema,  { scale: SCALE_NORMAL, duration: isReducedMotion() ? 0.01 : 0.55, ease: JOY_ELASTIC }, 0)
+          .to(pose, { happy: 0, duration: 0.2, ease: 'power2.inOut', onUpdate: applyHappyEyes }, 0.05);
+      });
+    }
+
+    // ---------- Réveil ----------
+    function wake() {
+      resetEmotions();
+      poseTimeline?.kill();
+      awake = false;
+      isHolding = false;
+      position.vx = position.vy = 0;
+      poseTimeline = gsap.timeline({ onComplete() {
+        awake = true;
+        target.x = position.x;   // évite de filer vers une ancienne destination
+        target.y = position.y;
+      }});
+      poseTimeline.to(pose, { headY: 0, duration: 0.85, ease: 'power3.out' }, 0);                                // la tête se relève
+      poseTimeline.to(pose, { bodyRotation: 0, bodyY: 0, duration: 1.05, ease: 'power3.inOut' }, 0.1);          // le corps se redresse
+      poseTimeline.to(pose, { eyesOpen: 1, duration: 0.32, ease: 'power2.out' }, 0.64);                          // les yeux s'ouvrent
+      if (isReducedMotion()) poseTimeline.progress(1);
+    }
+
+    // ---------- Sommeil : retour à la position d'origine ----------
+    function sleep() {
+      resetEmotions();
+      poseTimeline?.kill();
+      awake = false;
+      isHolding = false;
+      target.x = position.x;
+      target.y = position.y;
+      position.vx = position.vy = 0;
+      poseTimeline = gsap.timeline();
+      poseTimeline.to(pose, { eyesOpen: 0, duration: 0.23, ease: 'power2.inOut' }, 0);
+      poseTimeline.to(pose, { headY: SLEEP_HEAD_Y, duration: 0.85, ease: 'power3.inOut' }, 0.1);
+      poseTimeline.to(pose, { bodyRotation: 180, bodyY: SLEEP_BODY_Y, duration: 1.05, ease: 'power3.inOut' }, 0);
+      poseTimeline.to(position, { x: homePosition.x, y: homePosition.y, duration: 1.15, ease: 'power3.inOut' }, 0);
+      if (isReducedMotion()) poseTimeline.progress(1);
+    }
+
+    // ---------- Émotions : 'happy' (sauts + yeux ^ ^) ou 'sad' (yeux tombants + tête qui secoue) ----------
+    function react(kind) {
+      if (!awake) return;
+      moodTimeline?.kill();
+      if (kind === 'happy') {
+        moodTimeline = gsap.timeline()
+          .to(pose, { sad: 0, shake: 0, duration: 0.15 }, 0)
+          .to(pose, { happy: 1, duration: 0.14, ease: 'power2.out', onUpdate: applyHappyEyes }, 0)
+          .to(pose, { hop: 22, duration: 0.18, ease: 'power2.out' }, 0)         // premier saut
+          .to(pose, { hop: 0,  duration: 0.32, ease: 'bounce.out' }, 0.18)
+          .to(pose, { hop: 14, duration: 0.15, ease: 'power2.out' }, 0.62)      // petit second saut
+          .to(pose, { hop: 0,  duration: 0.28, ease: 'bounce.out' }, 0.77)
+          .to(pose, { happy: 0, duration: 0.25, ease: 'power2.inOut', onUpdate: applyHappyEyes }, 1.7);
+      } else {
+        moodTimeline = gsap.timeline()
+          .to(pose, { happy: 0, hop: 0, duration: 0.1, onUpdate: applyHappyEyes }, 0)
+          .to(pose, { sad: 1, duration: 0.4, ease: 'power2.out' }, 0)
+          .to(pose, { shake: -7, duration: 0.12, ease: 'sine.inOut' }, 0.35)    // la tête dit « non »
+          .to(pose, { shake: 7,  duration: 0.2,  ease: 'sine.inOut' }, 0.47)
+          .to(pose, { shake: -5, duration: 0.2,  ease: 'sine.inOut' }, 0.67)
+          .to(pose, { shake: 0,  duration: 0.15, ease: 'sine.out' }, 0.87)
+          .to(pose, { sad: 0, duration: 0.5, ease: 'power2.inOut' }, 2.2);
       }
-      function hideBubble() {
-        bubbleOn = false;
-        clearInterval(typeTimer);
-        gsap.killTweensOf(bubbleBox);
-        gsap.to(bubbleBox, {
-          scale: 0.6, opacity: 0, duration: reduced ? 0.01 : 0.2,
-          onComplete: () => { if (!bubbleOn) bubble.classList.remove("on"); }
+      if (isReducedMotion()) moodTimeline.progress(1);
+    }
+
+    window.emaController = { wake, sleep, react };
+
+    // ---------- Boucle principale (appelée à chaque image, ~60 fois/s) ----------
+    // `ease(k, dt)` : rapproche progressivement une valeur de sa cible, quelle que soit la fréquence d'images
+    const ease = (k, dt) => 1 - Math.exp(-k * dt);
+
+    function animate(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);   // temps écoulé (plafonné à 50 ms)
+      lastTime = now;
+
+      if (!awake) {
+        // ----- EMA dort (ou se réveille) : on ramène doucement l'inclinaison à zéro -----
+        const k = ease(12, dt);
+        bodyTilt    -= bodyTilt * k;
+        headTilt    -= headTilt * k;
+        headAdvance -= headAdvance * k;
+        eyeX        -= eyeX * k;
+        eyeY        -= eyeY * k;
+
+        moveX(position.x);
+        moveY(position.y);
+        setBodyRotation(bodyTilt + pose.bodyRotation);
+        setBodyY(pose.bodyY);
+        setHeadRotation(headTilt);
+        setHeadX(headAdvance);
+        setHeadY(pose.headY);
+        eyeSetters.forEach((eye, i) => {
+          eye.x(eyeX);
+          eye.y(eyeY);
+          eye.r(0);
+          setEyeScaleY[i](pose.eyesOpen * 0.94);
         });
+        requestAnimationFrame(animate);
+        return;
       }
-      // La bulle suit la tête d'EMA à chaque image
-      function trackBubble() {
-        if (bubbleOn) {
-          const h = emaHead.getBoundingClientRect();
-          const w = bubble.offsetWidth, bh = bubble.offsetHeight, m = 10;
-          const cx = h.left + h.width / 2;
-          let y = h.top - bh - 16, below = false;
-          if (y < m) { below = true; y = h.bottom + 16; }   // pas la place au-dessus : on passe dessous
-          const x = Math.min(Math.max(cx - w / 2, m), innerWidth - w - m);
-          bubble.classList.toggle("below", below);
-          bubble.style.setProperty("--tx", Math.min(Math.max(cx - x, 22), w - 22) + "px");
-          bubble.style.transform = "translate3d(" + x + "px," + y + "px,0)";
-        }
-        requestAnimationFrame(trackBubble);
+
+      // ----- EMA est réveillée : elle poursuit la cible -----
+      const dx = target.x - position.x;
+      const dy = target.y - position.y;
+      const distance = Math.hypot(dx, dy);
+
+      // Plus la cible est loin, plus elle va vite (jusqu'à maxSpeed)
+      const speed = Math.min(CONFIG.maxSpeed, distance * CONFIG.acceleration);
+      const desiredVX = distance > 0.01 ? dx / distance * speed : 0;
+      const desiredVY = distance > 0.01 ? dy / distance * speed : 0;
+
+      const steering = ease(5, dt);               // la vitesse s'adapte progressivement
+      position.vx += (desiredVX - position.vx) * steering;
+      position.vy += (desiredVY - position.vy) * steering;
+      position.x  += position.vx * dt;
+      position.y  += position.vy * dt;
+      moveX(position.x);
+      moveY(position.y - pose.hop);               // `hop` = petit saut vers le haut
+
+      // Le corps s'incline dans le sens du déplacement, la tête suit un peu moins
+      const targetTilt = gsap.utils.clamp(-CONFIG.maxTilt, CONFIG.maxTilt,
+        position.vx / CONFIG.maxSpeed * CONFIG.maxTilt);
+      const tiltK = ease(CONFIG.tiltSmoothness, dt);
+      bodyTilt    += (targetTilt - bodyTilt) * tiltK;
+      headTilt    += (bodyTilt * 0.45 - headTilt) * tiltK;
+      headAdvance += (position.vx / CONFIG.maxSpeed * 12 - headAdvance) * tiltK;
+
+      // Les yeux « regardent » dans le sens du déplacement
+      const targetEyeX = gsap.utils.clamp(-16, 26, position.vx / CONFIG.maxSpeed * 16);
+      const targetEyeY = gsap.utils.clamp(-10, 10, position.vy / CONFIG.maxSpeed * 10);
+      const eyeK = ease(10, dt);
+      eyeX += (targetEyeX - eyeX) * eyeK;
+      eyeY += (targetEyeY - eyeY) * eyeK;
+
+      // Application à l'écran (en tenant compte des émotions)
+      setBodyRotation(bodyTilt);
+      setBodyY(pose.bodyY);
+      setHeadRotation(headTilt + pose.shake);
+      setHeadX(headAdvance);
+      setHeadY(pose.headY + pose.sad * 10);
+      eyeSetters.forEach((eye, i) => {
+        eye.x(eyeX);
+        eye.y(eyeY + pose.happy * 14 + pose.sad * 30);
+        eye.r(pose.sad * 16 * eye.dir);
+        setEyeScaleY[i](0.94 * (1 - pose.sad * 0.5));
+      });
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  })();
+  </script>
+
+
+  <!-- ================================================================
+       C. APPLICATION — bulle d'EMA, scan 3D, scénario de duplication,
+          animation d'ouverture / retour à l'accueil
+       ================================================================ -->
+  <script>
+  if (window.gsap) {
+
+    // ================= C1. ÉLÉMENTS DE LA PAGE =================
+    const wrap     = document.querySelector(".title-wrap");
+    const tagPos   = document.querySelector(".tag-pos");
+    const tagSvg   = document.querySelector(".tag");
+    const touchHint = document.querySelector(".touch-hint");
+    const boxes    = [...document.querySelectorAll(".box")];
+    const slot     = document.querySelector(".empty .slot");
+    const ingredient  = document.querySelector(".ingredient");
+    const invalidMark = document.querySelector(".slot-invalid");
+    const controls    = document.getElementById("dup-controls");
+    const dupButton   = document.getElementById("dup-button");
+    const progressWrap  = document.getElementById("progress-wrap");
+    const progressFill  = document.getElementById("progress-fill");
+    const progressValue = document.getElementById("progress-value");
+    const adMessage   = document.getElementById("ad-message");
+    const success     = document.getElementById("success");
+
+    // ================= C2. ÉTAT GLOBAL =================
+    // phase : "home"       écran d'accueil
+    //         "empty"      carré vide, en attente d'un objet
+    //         "loaded"     objet inséré, bouton DUPLIQUER visible
+    //         "invalid"    objet refusé (croix)
+    //         "processing" duplication en cours
+    //         "done"       duplication terminée
+    let phase = "home";
+    let currentShape = "ico";     // forme 3D à scanner : "ico" ou "key"
+    let opened = false;           // l'animation d'ouverture a-t-elle été lancée ?
+    let screenReady = false;      // l'interface est-elle prête (animation d'ouverture finie) ?
+    let transition = null;        // timeline GSAP d'ouverture (rejouée à l'envers pour fermer)
+    let inactivityTimer = null;
+    let adInterval = null;
+    let progressFrame = null;
+
+    const INACTIVITY_MS = 5000;   // retour à l'accueil après 5 s sans action
+    const DUPLICATION_MS = prefersReducedMotion ? 1500 : 10000;   // durée de la duplication
+
+    const ADS = TEXTES.pubs;      // messages publicitaires (définis dans textes.js)
+
+
+    // ================= C3. INDICATEUR TACTILE =================
+    // Le place pile au milieu de l'espace entre le haut de l'écran et l'horloge.
+    function positionTouchHint() {
+      const clockTop = tagSvg.getBoundingClientRect().top;
+      touchHint.style.top = Math.max(48, clockTop / 2) + "px";
+    }
+    requestAnimationFrame(positionTouchHint);
+    addEventListener("load", () => requestAnimationFrame(positionTouchHint));
+    document.fonts?.ready.then(() => requestAnimationFrame(positionTouchHint));   // après chargement de la police
+
+
+    // ================= C4. BULLE DE DIALOGUE D'EMA =================
+    const bubble      = document.getElementById("ema-bubble");
+    const bubbleBox   = bubble.querySelector(".ema-bubble__box");
+    const bubbleGhost = bubble.querySelector(".ghost");   // texte invisible = réserve la taille finale
+    const bubbleTyped = bubble.querySelector(".typed");   // texte visible, tapé lettre par lettre
+    const emaHead     = document.querySelector(".head-div");
+    let bubbleOn = false;
+    let typeTimer = null;
+
+    // Affiche un message avec effet « machine à écrire »
+    function say(text) {
+      if (!screenReady) return;   // pas de message pendant le retour à l'accueil
+      bubbleOn = true;
+      bubble.classList.add("on");
+      clearInterval(typeTimer);
+      gsap.killTweensOf(bubbleBox);
+      bubbleGhost.textContent = text + "_";   // le "_" réserve aussi la place du curseur
+      bubbleTyped.textContent = "";
+
+      if (prefersReducedMotion) {
+        gsap.set(bubbleBox, { scale: 1, opacity: 1 });
+        bubbleTyped.textContent = text;
+        return;
+      }
+      let i = 0;
+      typeTimer = setInterval(() => {
+        bubbleTyped.textContent = text.slice(0, ++i);
+        if (i >= text.length) clearInterval(typeTimer);
+      }, 28);   // une lettre toutes les 28 ms
+      gsap.fromTo(bubbleBox,
+        { scale: 0.6, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(2)" });
+    }
+
+    function hideBubble() {
+      bubbleOn = false;
+      clearInterval(typeTimer);
+      gsap.killTweensOf(bubbleBox);
+      gsap.to(bubbleBox, {
+        scale: 0.6, opacity: 0, duration: prefersReducedMotion ? 0.01 : 0.2,
+        onComplete: () => { if (!bubbleOn) bubble.classList.remove("on"); }
+      });
+    }
+
+    // À chaque image : la bulle se replace au-dessus de la tête d'EMA
+    function trackBubble() {
+      if (bubbleOn) {
+        const h = emaHead.getBoundingClientRect();
+        const w = bubble.offsetWidth, bh = bubble.offsetHeight, margin = 10;
+        const headCenterX = h.left + h.width / 2;
+
+        let y = h.top - bh - 16;
+        let below = false;
+        if (y < margin) { below = true; y = h.bottom + 16; }   // pas la place au-dessus : on passe dessous
+
+        const x = Math.min(Math.max(headCenterX - w / 2, margin), innerWidth - w - margin);
+        bubble.classList.toggle("below", below);
+        // La pointe de la bulle reste alignée sur la tête
+        bubble.style.setProperty("--tx", Math.min(Math.max(headCenterX - x, 22), w - 22) + "px");
+        bubble.style.transform = "translate3d(" + x + "px," + y + "px,0)";
       }
       requestAnimationFrame(trackBubble);
-      const wire = (() => {
-      const cv = document.getElementById("wire");
-      const ctx = cv.getContext("2d");
-      const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+    }
+    requestAnimationFrame(trackBubble);
+
+
+    // ================= C5. SCAN 3D (wireframe sur canvas) =================
+    // Dessine un objet 3D en fil de fer qui tourne et se "remplit" de bas en haut
+    // au fil de la progression. Aucune bibliothèque 3D : tout est calculé ici.
+    const wire = (() => {
+      const canvas = document.getElementById("wire");
+      const ctx = canvas.getContext("2d");
+
+      // --- Petits outils de calcul vectoriel (vecteurs = [x, y, z]) ---
+      const sub   = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+      const dot   = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
       const cross = (u, v) => [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
-      const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
       const lerp3 = (a, b, t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
 
-      // Construit un maillage à partir de faces {p: sommets, out: direction vers l'extérieur}
-      function build(faces) {
-        const V = [], idx = new Map(), F = [], E = [], seen = new Set();
-        const vid = p => {
-          const k = p.map(c => c.toFixed(4)).join();
-          if (!idx.has(k)) { idx.set(k, V.length); V.push(p); }
-          return idx.get(k);
+      // Construit un maillage {V: sommets, F: faces, E: arêtes} à partir d'une liste de faces.
+      // Chaque face = { p: sommets, out: direction vers l'extérieur } ;
+      // « out » sert à orienter correctement la face.
+      function buildMesh(faces) {
+        const V = [], F = [], E = [];
+        const vertexIndex = new Map(), seenEdges = new Set();
+
+        const vertexId = p => {   // un même sommet n'est stocké qu'une fois
+          const key = p.map(c => c.toFixed(4)).join();
+          if (!vertexIndex.has(key)) { vertexIndex.set(key, V.length); V.push(p); }
+          return vertexIndex.get(key);
         };
+
         faces.forEach(({ p, out }) => {
-          let q = p;
-          if (dot(cross(sub(q[1], q[0]), sub(q[2], q[0])), out) < 0) q = q.slice().reverse();
-          const ids = q.map(vid);
+          let pts = p;
+          // Si la face regarde vers l'intérieur, on inverse l'ordre des sommets
+          if (dot(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])), out) < 0) pts = pts.slice().reverse();
+          const ids = pts.map(vertexId);
           F.push(ids);
-          ids.forEach((a, i) => {
-            const b = ids[(i + 1) % ids.length], k = Math.min(a, b) + "-" + Math.max(a, b);
-            if (!seen.has(k)) { seen.add(k); E.push([a, b]); }
+          ids.forEach((a, i) => {   // enregistre chaque arête une seule fois
+            const b = ids[(i + 1) % ids.length];
+            const edgeKey = Math.min(a, b) + "-" + Math.max(a, b);
+            if (!seenEdges.has(edgeKey)) { seenEdges.add(edgeKey); E.push([a, b]); }
           });
         });
         return { V, F, E };
       }
 
-      // --- Forme 1 : icosaèdre ---
-      const ico = (() => {
+      // --- Forme 1 : icosaèdre (20 faces triangulaires) ---
+      const icosahedron = (() => {
         const phi = (1 + Math.sqrt(5)) / 2, norm = Math.hypot(1, phi);
-        const Vi = [[-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],
-                    [0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]]
-          .map(v => v.map(c => c / norm));
-        const Fi = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
-                    [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
-        return build(Fi.map(f => {
-          const p = f.map(i => Vi[i]);
-          return { p, out: [0, 1, 2].map(k => p[0][k] + p[1][k] + p[2][k]) };
+        const vertices = [
+          [-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],
+          [0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]
+        ].map(v => v.map(c => c / norm));
+        const triangles = [
+          [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+          [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
+        ];
+        return buildMesh(triangles.map(tri => {
+          const p = tri.map(i => vertices[i]);
+          return { p, out: [0, 1, 2].map(k => p[0][k] + p[1][k] + p[2][k]) };   // direction = centre de la face
         }));
       })();
 
       // --- Forme 2 : clé (debout : anneau en haut, dents en bas) ---
-      const box = (x0, x1, y0, y1, z0, z1) => {
+      // Un pavé droit (6 faces) entre les bornes x0..x1, y0..y1, z0..z1
+      const boxFaces = (x0, x1, y0, y1, z0, z1) => {
         const c = (x, y, z) => [x, y, z];
         return [
           { p: [c(x0,y0,z1), c(x1,y0,z1), c(x1,y1,z1), c(x0,y1,z1)], out: [0, 0, 1] },
@@ -787,110 +1328,136 @@
           { p: [c(x0,y0,z0), c(x1,y0,z0), c(x1,y0,z1), c(x0,y0,z1)], out: [0, -1, 0] }
         ];
       };
-      const ring = (cx, cy, ro, ri, t, n) => {
+      // Un anneau épais centré en (cx, cy), rayon extérieur ro, intérieur ri, épaisseur 2t, n segments
+      const ringFaces = (cx, cy, ro, ri, t, n) => {
         const faces = [];
         for (let i = 0; i < n; i++) {
-          const a0 = i / n * 2 * Math.PI, a1 = (i + 1) / n * 2 * Math.PI, am = (a0 + a1) / 2;
+          const a0 = i / n * 2 * Math.PI;
+          const a1 = (i + 1) / n * 2 * Math.PI;
+          const am = (a0 + a1) / 2;
           const pt = (r, a, z) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r, z];
-          const rad = [Math.cos(am), Math.sin(am), 0];
-          faces.push({ p: [pt(ri,a0,t),  pt(ro,a0,t),  pt(ro,a1,t),  pt(ri,a1,t)],  out: [0, 0, 1] });
-          faces.push({ p: [pt(ri,a0,-t), pt(ro,a0,-t), pt(ro,a1,-t), pt(ri,a1,-t)], out: [0, 0, -1] });
-          faces.push({ p: [pt(ro,a0,-t), pt(ro,a0,t),  pt(ro,a1,t),  pt(ro,a1,-t)], out: rad });
-          faces.push({ p: [pt(ri,a0,-t), pt(ri,a0,t),  pt(ri,a1,t),  pt(ri,a1,-t)], out: rad.map(q => -q) });
+          const radial = [Math.cos(am), Math.sin(am), 0];
+          faces.push({ p: [pt(ri,a0,t),  pt(ro,a0,t),  pt(ro,a1,t),  pt(ri,a1,t)],  out: [0, 0, 1] });    // dessus
+          faces.push({ p: [pt(ri,a0,-t), pt(ro,a0,-t), pt(ro,a1,-t), pt(ri,a1,-t)], out: [0, 0, -1] });   // dessous
+          faces.push({ p: [pt(ro,a0,-t), pt(ro,a0,t),  pt(ro,a1,t),  pt(ro,a1,-t)], out: radial });       // paroi extérieure
+          faces.push({ p: [pt(ri,a0,-t), pt(ri,a0,t),  pt(ri,a1,t),  pt(ri,a1,-t)], out: radial.map(q => -q) });   // paroi intérieure
         }
         return faces;
       };
-      const T = 0.09;
-      const key = build([
-        ...ring(0, 0.52, 0.45, 0.22, T, 14),         // anneau
-        ...box(-0.07, 0.07, -0.95, 0.12, -T, T),     // tige
-        ...box(0.07, 0.32, -0.95, -0.78, -T, T),     // dent du bas
-        ...box(0.07, 0.25, -0.62, -0.47, -T, T)      // dent du milieu
+      const KEY_THICKNESS = 0.09;
+      const key = buildMesh([
+        ...ringFaces(0, 0.52, 0.45, 0.22, KEY_THICKNESS, 14),                  // anneau
+        ...boxFaces(-0.07, 0.07, -0.95, 0.12, -KEY_THICKNESS, KEY_THICKNESS),  // tige
+        ...boxFaces(0.07, 0.32, -0.95, -0.78, -KEY_THICKNESS, KEY_THICKNESS),  // dent du bas
+        ...boxFaces(0.07, 0.25, -0.62, -0.47, -KEY_THICKNESS, KEY_THICKNESS)   // dent du milieu
       ]);
 
-      const SHAPES = { ico, key };
-      let mesh = ico;
+      const SHAPES = { ico: icosahedron, key };
+      let mesh = icosahedron;
 
-      const TILT = 0.45, D = 3.2, LIGHT = [-0.35, 0.8, 0.5];
-      let raf = null, progress = 0, angle = 0, last = 0;
+      // --- Réglages de la vue ---
+      const TILT = 0.45;                 // inclinaison de la caméra
+      const CAMERA_DISTANCE = 3.2;       // plus c'est petit, plus la perspective est forte
+      const LIGHT = [-0.35, 0.8, 0.5];   // direction de la lumière
+      let rafId = null;
+      let progress = 0;                  // 0 → 1 : avancement du scan
+      let angle = 0;                     // rotation actuelle de l'objet
+      let lastFrame = 0;
 
-      function xf([x, y, z]) {
+      // Applique rotation (autour de Y) puis inclinaison (autour de X) à un point
+      function transform([x, y, z]) {
         const ca = Math.cos(angle), sa = Math.sin(angle);
         const X = x * ca + z * sa, Z = -x * sa + z * ca;
         const ct = Math.cos(TILT), st = Math.sin(TILT);
         return [X, y * ct - Z * st, y * st + Z * ct];
       }
-      function clipBelow(poly, lvl) {
-        const out = [];
-        for (let i = 0; i < poly.length; i++) {
-          const a = poly[i], b = poly[(i + 1) % poly.length];
-          const ina = a[1] <= lvl, inb = b[1] <= lvl;
-          if (ina) out.push(a);
-          if (ina !== inb) out.push(lerp3(a, b, (lvl - a[1]) / (b[1] - a[1])));
+
+      // Coupe un polygone : ne garde que la partie située sous le niveau « level » (hauteur y)
+      function clipBelow(polygon, level) {
+        const result = [];
+        for (let i = 0; i < polygon.length; i++) {
+          const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+          const aIn = a[1] <= level, bIn = b[1] <= level;
+          if (aIn) result.push(a);
+          if (aIn !== bIn) result.push(lerp3(a, b, (level - a[1]) / (b[1] - a[1])));
         }
-        return out;
+        return result;
       }
 
       function draw() {
-        const w = cv.clientWidth, h = cv.clientHeight;
+        const w = canvas.clientWidth, h = canvas.clientHeight;
         if (!w) return;
+
+        // Résolution adaptée aux écrans haute densité
         const dpr = Math.min(2, window.devicePixelRatio || 1);
-        if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+        if (canvas.width !== Math.round(w * dpr)) {
+          canvas.width = Math.round(w * dpr);
+          canvas.height = Math.round(h * dpr);
+        }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
-        const cx = w / 2, cy = h / 2, S = Math.min(w, h) * 0.36;
-        const pt = p => { const k = S * D / (D - p[2]); return [cx + p[0] * k, cy - p[1] * k]; };
-        const P = mesh.V.map(xf);
-        const lvl = -1.02 + 2.04 * progress;
+
+        const cx = w / 2, cy = h / 2, scale = Math.min(w, h) * 0.36;
+        // Projection 3D → 2D avec perspective
+        const project = p => {
+          const k = scale * CAMERA_DISTANCE / (CAMERA_DISTANCE - p[2]);
+          return [cx + p[0] * k, cy - p[1] * k];
+        };
+
+        const points = mesh.V.map(transform);
+        const scanLevel = -1.02 + 2.04 * progress;   // hauteur du plan de scan
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
 
-        // 1. Wireframe fantôme : uniquement la partie encore au-dessus du plan de scan
+        // 1. Fil de fer fantôme : seulement la partie encore AU-DESSUS du plan de scan
         ctx.strokeStyle = "rgba(255,255,255,0.28)";
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 4]);
         mesh.E.forEach(([i, j]) => {
-          let a = P[i], b = P[j];
+          let a = points[i], b = points[j];
           if (a[1] > b[1]) [a, b] = [b, a];
-          if (b[1] <= lvl) return;
-          if (a[1] < lvl) a = lerp3(a, b, (lvl - a[1]) / (b[1] - a[1]));
-          const pa = pt(a), pb = pt(b);
+          if (b[1] <= scanLevel) return;                                         // arête entièrement scannée
+          if (a[1] < scanLevel) a = lerp3(a, b, (scanLevel - a[1]) / (b[1] - a[1]));   // arête coupée
+          const pa = project(a), pb = project(b);
           ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
         });
         ctx.setLineDash([]);
 
-        // 2. Faces pleines et opaques, triées de la plus lointaine à la plus proche
-        const polys = [];
-        mesh.F.forEach(f => {
-          const pts = f.map(i => P[i]);
-          let n = cross(sub(pts[1], pts[0]), sub(pts[2], pts[0]));
-          const len = Math.hypot(...n) || 1; n = n.map(q => q / len);
-          const poly = clipBelow(pts, lvl);
+        // 2. Faces pleines (partie déjà scannée), de la plus lointaine à la plus proche
+        const polygons = [];
+        mesh.F.forEach(face => {
+          const pts = face.map(i => points[i]);
+          let normal = cross(sub(pts[1], pts[0]), sub(pts[2], pts[0]));
+          const len = Math.hypot(...normal) || 1;
+          normal = normal.map(q => q / len);
+          const poly = clipBelow(pts, scanLevel);
           if (poly.length < 3) return;
-          const z = poly.reduce((s, p) => s + p[2], 0) / poly.length;
-          polys.push({ poly, z, n });
+          const depth = poly.reduce((sum, p) => sum + p[2], 0) / poly.length;
+          polygons.push({ poly, depth, normal });
         });
-        polys.sort((a, b) => a.z - b.z);
-        polys.forEach(({ poly, n }) => {
-          let c;
-          if (n[2] <= 0) {
-            c = [30, 46, 165];                                   // face arrière (intérieur visible à la coupe)
+        polygons.sort((a, b) => a.depth - b.depth);
+
+        polygons.forEach(({ poly, normal }) => {
+          let color;
+          if (normal[2] <= 0) {
+            color = [30, 46, 165];   // face arrière (visible à l'intérieur au niveau de la coupe)
           } else {
-            const t = Math.min(1, 0.3 + 0.7 * Math.max(0, dot(n, LIGHT)));
-            c = [40, 60, 200].map((d, k) => Math.round(d + (255 - d) * t));
+            // Éclairage : plus la face est tournée vers la lumière, plus elle est claire
+            const light = Math.min(1, 0.3 + 0.7 * Math.max(0, dot(normal, LIGHT)));
+            color = [40, 60, 200].map(c => Math.round(c + (255 - c) * light));
           }
-          const col = "rgb(" + c.join() + ")";
-          ctx.fillStyle = col;
-          ctx.strokeStyle = col;                                  // même couleur : masque les coutures entre faces
+          const css = "rgb(" + color.join() + ")";
+          ctx.fillStyle = css;
+          ctx.strokeStyle = css;   // contour de même couleur : masque les coutures entre faces
           ctx.lineWidth = 1;
           ctx.beginPath();
-          poly.forEach((p, i) => { const q = pt(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
+          poly.forEach((p, i) => { const q = project(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
           ctx.closePath(); ctx.fill(); ctx.stroke();
         });
 
-        // 3. Ligne de scan
+        // 3. Ligne de scan cyan
         if (progress > 0 && progress < 1) {
-          const a = pt([-1.25, lvl, 0]), b = pt([1.25, lvl, 0]);
+          const a = project([-1.25, scanLevel, 0]), b = project([1.25, scanLevel, 0]);
           ctx.strokeStyle = "#8cf3ff";
           ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
@@ -898,512 +1465,282 @@
       }
 
       function frame(now) {
-        const dt = Math.min((now - last) / 1000, 0.05);
-        last = now;
-        if (!reduced) angle += dt * 0.9;
+        const dt = Math.min((now - lastFrame) / 1000, 0.05);
+        lastFrame = now;
+        if (!prefersReducedMotion) angle += dt * 0.9;   // vitesse de rotation
         draw();
-        raf = requestAnimationFrame(frame);
+        rafId = requestAnimationFrame(frame);
       }
+
+      // API publique du module
       return {
-        start(shape) {
-          mesh = SHAPES[shape] || ico;
-          progress = 0; angle = 0.6;
-          cv.classList.add("visible");
-          last = performance.now();
-          if (!raf) raf = requestAnimationFrame(frame);
+        start(shapeName) {                 // démarre le scan d'une forme ("ico" ou "key")
+          mesh = SHAPES[shapeName] || icosahedron;
+          progress = 0;
+          angle = 0.6;
+          canvas.classList.add("visible");
+          lastFrame = performance.now();
+          if (!rafId) rafId = requestAnimationFrame(frame);
         },
-        setProgress(p) { progress = p; },
-        stop() { if (raf) cancelAnimationFrame(raf); raf = null; cv.classList.remove("visible"); progress = 0; }
+        setProgress(p) { progress = p; },  // 0 → 1
+        stop() {                           // arrête et masque
+          if (rafId) cancelAnimationFrame(rafId);
+          rafId = null;
+          canvas.classList.remove("visible");
+          progress = 0;
+        }
       };
     })();
-      const ADS = [
-        "Cette duplication vous est présentée par l'Association des Objets Qui N'Ont Rien Demandé.",
-        "Passez à DUPLICATOR PREMIUM : exactement la même chose, mais en doré.",
-        "Un deuxième objet ? Votre banquier va adorer. Votre placard, moins.",
-        "Publicité : 9 experts sur 10 recommandent d'éviter le dixième.",
-        "Avec DUPLICATOR+, obtenez 200 % de matière pour seulement 300 % du prix.",
-        "Bientôt : la duplication de RTT. Notre service juridique nous demande de retirer cette annonce.",
-        "Vous aimez patienter ? Découvrez notre gamme de files d'attente collector.",
-        "Nos machines sont testées sur des objets. Aucun objet n'a souhaité témoigner."
-      ];
-      let phase = "home";
-      let currentShape = "ico";
-      let adInterval = null;
-      let progressFrame = null;
-      let opened = false;
-      let screenReady = false;
-      let inactivityTimer = null;
-      let transition = null;
-      const INACTIVITY_MS = 5000;
-      function resetInactivity() {
-        if (!screenReady || phase === "processing") return;
-        clearTimeout(inactivityTimer);
-        inactivityTimer = setTimeout(returnHome, INACTIVITY_MS);
-      }
-      function clearProcess() {
-        if (adInterval) clearInterval(adInterval);
-        adInterval = null;
-        if (progressFrame) cancelAnimationFrame(progressFrame);
-        progressFrame = null;
-      }
-      function resetDuplication() {
-        clearProcess();
-        phase = "home";
-        ingredient.classList.remove("visible");
-          invalidMark.classList.remove("visible");
-        controls.classList.remove("visible");
-        dupButton.hidden = true;
-        wire.stop();
+
+
+    // ================= C6. SCÉNARIO DE DUPLICATION =================
+
+    // Remet l'inactivité à zéro : si rien ne se passe pendant 5 s, retour à l'accueil
+    function resetInactivity() {
+      if (!screenReady || phase === "processing") return;
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(returnHome, INACTIVITY_MS);
+    }
+
+    // Arrête la barre de progression et le défilement des pubs
+    function stopProcess() {
+      clearInterval(adInterval);
+      adInterval = null;
+      cancelAnimationFrame(progressFrame);
+      progressFrame = null;
+    }
+
+    // Remet tout l'écran central à zéro
+    function resetDuplication() {
+      stopProcess();
+      phase = "home";
+      ingredient.classList.remove("visible");
+      invalidMark.classList.remove("visible");
+      controls.classList.remove("visible");
+      dupButton.hidden = true;
+      wire.stop();
+      progressWrap.classList.remove("visible");
+      success.classList.remove("visible");
+      progressFill.style.width = "0%";
+      progressValue.textContent = "0%";
+      progressWrap.setAttribute("aria-valuenow", "0");
+      adMessage.textContent = "";
+    }
+
+    // Un objet valide est inséré (touche F ou H)
+    function insertIngredient(shape = "ico") {
+      if (!opened || !screenReady || !["empty", "invalid", "loaded"].includes(phase)) return;
+      invalidMark.classList.remove("visible");
+      currentShape = shape;
+      phase = "loaded";
+      ingredient.classList.add("visible");
+      say(TEXTES.bulle.objetDetecte);
+      window.emaController?.react("happy");
+      controls.classList.add("visible");
+      dupButton.hidden = false;
+      resetInactivity();
+    }
+
+    // Un objet non clonable est inséré (touche G)
+    function rejectIngredient() {
+      if (!opened || !screenReady || !["empty", "loaded", "invalid"].includes(phase)) return;
+      phase = "invalid";
+      ingredient.classList.remove("visible");
+      controls.classList.remove("visible");
+      dupButton.hidden = true;
+      progressWrap.classList.remove("visible");
+      success.classList.remove("visible");
+      say(TEXTES.bulle.objetRefuse);
+      window.emaController?.react("sad");
+      invalidMark.classList.remove("visible");
+      void invalidMark.offsetWidth;   // force le navigateur à "oublier" l'état précédent pour rejouer l'animation
+      invalidMark.classList.add("visible");
+      resetInactivity();
+    }
+
+    // Affiche une pub au hasard (jamais deux fois la même d'affilée)
+    function showRandomAd() {
+      let candidate = ADS[Math.floor(Math.random() * ADS.length)];
+      if (ADS.length > 1 && candidate === adMessage.textContent) candidate = ADS[(ADS.indexOf(candidate) + 1) % ADS.length];
+      adMessage.textContent = candidate;
+    }
+
+    // Lance la duplication : barre de progression + scan 3D + pubs
+    function startDuplication() {
+      if (phase !== "loaded" || !screenReady) return;
+      phase = "processing";
+      clearTimeout(inactivityTimer);    // pas de retour à l'accueil pendant la duplication
+      ingredient.classList.remove("visible");
+      wire.start(currentShape);
+      dupButton.hidden = true;
+      say(TEXTES.bulle.patienter);
+      progressWrap.classList.add("visible");
+      showRandomAd();
+      adInterval = setInterval(showRandomAd, 2200);   // nouvelle pub toutes les 2,2 s
+
+      const startTime = performance.now();
+      function renderProgress(now) {
+        if (phase !== "processing") return;
+        const ratio = Math.min(1, (now - startTime) / DUPLICATION_MS);
+        const eased = 1 - Math.pow(1 - ratio, 1.35);   // démarre vite, finit en douceur
+        const percent = Math.round(eased * 100);
+        progressFill.style.width = percent + "%";
+        progressValue.textContent = percent + "%";
+        progressWrap.setAttribute("aria-valuenow", String(percent));
+        wire.setProgress(eased);
+
+        if (ratio < 1) { progressFrame = requestAnimationFrame(renderProgress); return; }
+
+        // Terminé !
+        stopProcess();
+        phase = "done";
         progressWrap.classList.remove("visible");
-        success.classList.remove("visible");
-        progressFill.style.width = "0%";
-        progressValue.textContent = "0%";
-        progressWrap.setAttribute("aria-valuenow", "0");
-        adMessage.textContent = "";
-      }
-      function insertIngredient(shape = "ico") {
-        if (!opened || !screenReady || !["empty", "invalid", "loaded"].includes(phase)) return;
-        invalidMark.classList.remove("visible");
-        currentShape = shape;
-        phase = "loaded";
-        ingredient.classList.add("visible");
-        say("Objet détecté · prêt pour la duplication !");
-        window.emaController?.react("happy");
-        controls.classList.add("visible");
-        dupButton.hidden = false;
+        success.classList.add("visible");
+        say(TEXTES.bulle.termine);
         resetInactivity();
       }
-      function rejectIngredient() {
-          if (!opened || !screenReady || !["empty", "loaded", "invalid"].includes(phase)) return;
-          phase = "invalid";
-          ingredient.classList.remove("visible");
-          controls.classList.remove("visible");
-          dupButton.hidden = true;
-          progressWrap.classList.remove("visible");
-          success.classList.remove("visible");
-          say("Objet inséré non clonable :(");
-          window.emaController?.react("sad");
-          invalidMark.classList.remove("visible");
-          // Redéclenche proprement l'apparition de la croix, même après plusieurs G.
-          void invalidMark.offsetWidth;
-          invalidMark.classList.add("visible");
-          resetInactivity();
-        }
-
-function showRandomAd() {
-        let candidate = ADS[Math.floor(Math.random() * ADS.length)];
-        if (candidate === adMessage.textContent) candidate = ADS[(ADS.indexOf(candidate) + 1) % ADS.length];
-        adMessage.textContent = candidate;
-      }
-      function startDuplication() {
-        if (phase !== "loaded" || !screenReady) return;
-        phase = "processing";
-        ingredient.classList.remove("visible");
-        wire.start(currentShape);
-        clearTimeout(inactivityTimer);
-        dupButton.hidden = true;
-        say("Merci de patienter");
-        progressWrap.classList.add("visible");
-        showRandomAd();
-        adInterval = setInterval(showRandomAd, 2200);
-        const started = performance.now();
-        const duration = reduced ? 1500 : 10000;
-        function renderProgress(now) {
-          if (phase !== "processing") return;
-          const ratio = Math.min(1, (now - started) / duration);
-          const eased = 1 - Math.pow(1 - ratio, 1.35);
-          const percent = Math.round(eased * 100);
-          progressFill.style.width = percent + "%";
-          progressValue.textContent = percent + "%";
-          progressWrap.setAttribute("aria-valuenow", String(percent));
-          wire.setProgress(eased);
-          if (ratio < 1) { progressFrame = requestAnimationFrame(renderProgress); return; }
-          clearProcess();
-          phase = "done";
-          progressWrap.classList.remove("visible");
-          success.classList.add("visible");
-          say("Duplication terminée !");
-          resetInactivity();
-        }
-        progressFrame = requestAnimationFrame(renderProgress);
-      }
-      dupButton.addEventListener("click", event => {
-        event.stopPropagation();
-        startDuplication();
-      });
-              document.addEventListener("keydown", event => {
-          if (event.repeat || event.ctrlKey || event.altKey || event.metaKey ||
-              /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
-          const key = event.key.toLowerCase();
-          if (key === "f") insertIngredient();
-          if (key === "h") insertIngredient("key");
-          if (key === "g") rejectIngredient();
-        });
-
-function returnHome() {
-        if (!opened || !transition || phase === "processing") return;
-        screenReady = false;
-        hideBubble();
-        clearTimeout(inactivityTimer);
-        window.emaController?.sleep();
-        resetDuplication();
-        transition.eventCallback("onReverseComplete", () => {
-          opened = false;
-          document.body.classList.remove("is-open");
-          requestAnimationFrame(positionTouchHint);
-          document.body.style.cursor = "pointer";
-          gsap.set([wrap, tagPos, ...boxes, msg, slot], { clearProps: "all" });
-          gsap.set(tagPos, { transformOrigin: "50% 0%" });
-          gsap.set(msg, { opacity: 0, y: 10 });
-          gsap.set(slot, { opacity: 0, scale: 0.6 });
-        });
-        transition.reverse();
-      }
-      // Les mouvements et interactions repoussent le retour de 5 secondes.
-      ["pointermove", "pointerdown", "keydown", "touchstart", "wheel"].forEach(event => {
-        document.addEventListener(event, resetInactivity, { passive: true });
-      });
-      // Positions finales (calculées avec les offsets, donc indépendantes des transformations en cours)
-      function targets() {
-        const baseCY = wrap.offsetTop + wrap.offsetHeight / 2;
-        const targetW = Math.max(180, Math.min(440, innerWidth * 0.3));
-        const s = Math.min(0.6, targetW / wrap.offsetWidth);
-        const clockH = tagSvg.getBoundingClientRect().height;
-        const wrapH = wrap.offsetHeight * s;
-        const targetCY = 30 + clockH * 1.15 + wrapH / 2;
-        const titleBottom = targetCY + wrapH / 2;
-        // carrés d'ingrédients empilés à droite, au milieu
-        const visible = boxes.filter(b => b.offsetParent !== null);
-        const gap = 18;
-        const groupH = visible.reduce((h, b) => h + b.offsetHeight, 0) + gap * Math.max(0, visible.length - 1);
-        const right = Math.max(90, innerWidth * 0.07);
-        let top = Math.max(titleBottom + 20, innerHeight / 2 - groupH / 2);
-        const boxT = boxes.map(b => {
-          if (b.offsetParent === null) return null;
-          const t = {
-            x: innerWidth - right - b.offsetWidth - b.offsetLeft,
-            y: top - b.offsetTop
-          };
-          top += b.offsetHeight + gap;
-          return t;
-        });
-        return { s, dy: targetCY - baseCY, boxes: boxT };
-      }
-      function openUp() {
-        if (opened) return;
-        opened = true;
-        document.body.classList.add("is-open");
-        window.emaController?.wake();
-        document.body.style.cursor = "default";
-        const T = targets();
-        const p = { v: 0 };
-        const tl = gsap.timeline({
-          onComplete() {
-            screenReady = true;
-            phase = "empty";
-            say("En attente d'un objet à dupliquer");
-            resetInactivity();
-          }
-        });
-        transition = tl;
-        // 1. DUPLICATOR rapetisse et monte, l'horloge garde sa taille
-        tl.to(p, {
-          v: 1,
-          duration: 1.1,
-          ease: "power3.inOut",
-          onUpdate() {
-            const sc = 1 + (T.s - 1) * p.v;
-            gsap.set(wrap, { scale: sc, y: T.dy * p.v });
-            gsap.set(tagPos, { scale: 1 / sc });
-          }
-        });
-        // 2. les carrés d'ingrédients glissent à droite, au milieu
-        boxes.forEach((b, i) => {
-          if (!T.boxes[i]) return;
-          tl.to(b, { x: T.boxes[i].x, y: T.boxes[i].y, duration: 0.9, ease: "power3.inOut" }, 0.35 + i * 0.12);
-        });
-        // 3. le message apparaît par paliers, puis le carré vide
-        tl.to(msg, { opacity: 1, y: 0, duration: 0.7, ease: "steps(7)" }, "+=0.05");
-        tl.to(slot, { opacity: 1, scale: 1, duration: 0.7, ease: "back.out(1.8)" }, "<0.3");
-        if (reduced) tl.timeScale(50);
-      }
-      // Recalage si la fenêtre change de taille après le clic
-      window.addEventListener("resize", () => {
-          if (!opened) positionTouchHint();
-        if (!opened) return;
-        const T = targets();
-        gsap.set(wrap, { scale: T.s, y: T.dy });
-        gsap.set(tagPos, { scale: 1 / T.s });
-        boxes.forEach((b, i) => {
-          if (T.boxes[i]) gsap.set(b, { x: T.boxes[i].x, y: T.boxes[i].y });
-        });
-      });
-      document.addEventListener("click", openUp);
+      progressFrame = requestAnimationFrame(renderProgress);
     }
-  </script>
-  <script>
-    // Animation du personnage (indépendante de la timeline DUPLICATOR)
-    (() => {
-      const ema = document.querySelector('.ema-div');
-      const tete = ema.querySelector('.head-div');
-      const corps = ema.querySelector('.body-div');
-      const yeux = [...ema.querySelectorAll('.eye-div')];
-      const homePosition = { x: (window.innerWidth - 100) / 2, y: (window.innerHeight + 210) / 2 };
-      const position = { ...homePosition, vx: 0, vy: 0 };
-      const target = { ...homePosition };
-      const CONFIG = {
-        acceleration: 2.8,
-        maxSpeed: 1650,
-        maxTilt: 27,
-        tiltSmoothness: 15
-      };
-      let bodyTilt = 0;
-      let headTilt = 0;
-      let headAdvance = 0;
-      let eyeX = 0;
-      let eyeY = 0;
-      let lastTime = performance.now();
-      let isHolding = false;
-      // L'animation d'éveil est indépendante de la physique du déplacement.
-      const SLEEP_HEAD_Y = 32;
-      // Le pivot du corps reste en haut : à 180°, son dessin monte de sa hauteur.
-      // On compense verticalement cette hauteur pour laisser la tête posée dessus.
-      const SLEEP_BODY_Y = 200;
-      const pose = { headY: SLEEP_HEAD_Y, bodyRotation: 180, bodyY: SLEEP_BODY_Y, eyesOpen: 0, happy: 0, sad: 0, shake: 0, hop: 0 };
-      let awake = false;
-      let poseTimeline = null;
-      // Évite de déplacer le personnage lors de l'utilisation des boutons.
-      function isControl(el) {
-        return !!el.closest('button, a, input, select, textarea');
-      }
-      function updateTarget(event) {
-        target.x = event.clientX - 50;
-        target.y = event.clientY - 90;
-      }
-      window.addEventListener('pointerdown', event => {
-        if (!awake || event.button !== 0 || isControl(event.target)) return;
-        isHolding = true;
-        updateTarget(event);
+
+    dupButton.addEventListener("click", event => {
+      event.stopPropagation();   // évite de relancer l'animation d'ouverture
+      startDuplication();
+    });
+
+    // Touches du clavier qui simulent l'insertion d'un objet
+    document.addEventListener("keydown", event => {
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey ||
+          /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+      const key = event.key.toLowerCase();
+      if (key === "f") insertIngredient("ico");   // icosaèdre
+      if (key === "h") insertIngredient("key");   // clé
+      if (key === "g") rejectIngredient();        // non clonable
+    });
+
+    // Toute interaction repousse le retour à l'accueil de 5 secondes
+    ["pointermove", "pointerdown", "keydown", "touchstart", "wheel"].forEach(name => {
+      document.addEventListener(name, resetInactivity, { passive: true });
+    });
+
+
+    // ================= C7. ANIMATION D'OUVERTURE / RETOUR À L'ACCUEIL =================
+
+    gsap.set(tagPos, { transformOrigin: "50% 0%" });
+    gsap.set(slot, { opacity: 0, scale: 0.6 });
+
+    // Calcule les positions finales (indépendamment des transformations en cours) :
+    //   - échelle et décalage vertical du titre
+    //   - position des deux cadres de relevés (empilés à droite, au milieu)
+    function computeTargets() {
+      const baseCenterY = wrap.offsetTop + wrap.offsetHeight / 2;
+      const targetWidth = Math.max(180, Math.min(440, innerWidth * 0.3));
+      const titleScale = Math.min(0.6, targetWidth / wrap.offsetWidth);
+      const clockHeight = tagSvg.getBoundingClientRect().height;
+      const titleHeight = wrap.offsetHeight * titleScale;
+      const targetCenterY = 30 + clockHeight * 1.15 + titleHeight / 2;
+      const titleBottom = targetCenterY + titleHeight / 2;
+
+      // Cadres de relevés empilés à droite
+      const visibleBoxes = boxes.filter(b => b.offsetParent !== null);
+      const gap = 18;
+      const groupHeight = visibleBoxes.reduce((h, b) => h + b.offsetHeight, 0) + gap * Math.max(0, visibleBoxes.length - 1);
+      const rightMargin = Math.max(90, innerWidth * 0.07);
+      let top = Math.max(titleBottom + 20, innerHeight / 2 - groupHeight / 2);
+
+      const boxTargets = boxes.map(b => {
+        if (b.offsetParent === null) return null;   // cadre masqué (petit écran)
+        const t = {
+          x: innerWidth - rightMargin - b.offsetWidth - b.offsetLeft,
+          y: top - b.offsetTop
+        };
+        top += b.offsetHeight + gap;
+        return t;
       });
 
-      let joyTween = null;
-      let joyRelease = null;
-      let moodTl = null;
-      let joyActive = false;
-      let joyStart = 0;
-      const JOY_MIN_HOLD = 0.5;   // durée minimale en petit (s)
-      const SCALE_NORMAL = 0.5;
-      const SCALE_SMALL  = 0.44;
-      const JOY_ELASTIC  = 'elastic.out(1, 0.45)';
-      
-      function isOnEma(event) {
-        const r = ema.getBoundingClientRect();
-        return event.clientX >= r.left && event.clientX <= r.right &&
-              event.clientY >= r.top  && event.clientY <= r.bottom;
-      }
-      // Yeux joyeux : on ne garde que la moitié haute de l'œil → forme de "^ ^"
-      function applyHappy() {
-        const clip = 'inset(0% 0% ' + (pose.happy * 50) + '% 0%)';
-        yeux.forEach(oeil => { oeil.style.clipPath = clip; });
-      }
-      function resetJoy() {
-        joyTween?.kill();
-        joyRelease?.kill();
-        moodTl?.kill();
-        joyActive = false;
-        pose.happy = pose.sad = pose.shake = pose.hop = 0;
-        applyHappy();
-        gsap.set(ema, { scale: SCALE_NORMAL });
-      }
+      return { titleScale, titleDy: targetCenterY - baseCenterY, boxes: boxTargets };
+    }
 
-      function joyDown() {
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        joyRelease?.kill();
-        joyTween?.kill();
-        joyActive = true;
-        joyStart = performance.now();
-        joyTween = gsap.timeline()
-          .to(ema,  { scale: SCALE_SMALL, duration: reduced ? 0.01 : 0.45, ease: JOY_ELASTIC }, 0)
-          .to(pose, { happy: 1, duration: 0.14, ease: 'power2.out', onUpdate: applyHappy }, 0);
-      }
-      function joyUp() {
-        if (!joyActive) return;
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const elapsed = (performance.now() - joyStart) / 1000;
-        joyRelease?.kill();
-        joyRelease = gsap.delayedCall(Math.max(0, JOY_MIN_HOLD - elapsed), () => {
-          joyActive = false;
-          joyTween?.kill();
-          joyTween = gsap.timeline()
-            .to(ema,  { scale: SCALE_NORMAL, duration: reduced ? 0.01 : 0.55, ease: JOY_ELASTIC }, 0)
-            .to(pose, { happy: 0, duration: 0.2, ease: 'power2.inOut', onUpdate: applyHappy }, 0.05);
-        });
-      }
+    // Clic sur l'écran d'accueil : ouverture
+    function openUp() {
+      if (opened) return;
+      opened = true;
+      document.body.classList.add("is-open");   // masque l'indicateur tactile
+      document.body.style.cursor = "default";
+      window.emaController?.wake();
 
-      window.addEventListener('pointerdown', event => {
-        if (event.button === 0 && awake && !isControl(event.target) && isOnEma(event)) joyDown();
-      });
-      window.addEventListener('pointerup', joyUp);
-      window.addEventListener('pointercancel', joyUp);
-      window.addEventListener('blur', joyUp);
+      const T = computeTargets();
+      const progressTween = { v: 0 };   // valeur animée de 0 à 1, qui pilote le titre
 
-      window.addEventListener('pointermove', event => {
-        if (awake && isHolding) updateTarget(event);
-      });
-      window.addEventListener('pointerup', () => { isHolding = false; });
-      window.addEventListener('pointercancel', () => { isHolding = false; });
-      window.addEventListener('blur', () => { isHolding = false; });
-      const ORIGIN_FIX = () => ({ x: ema.offsetWidth * 0.25, y: ema.offsetHeight * 0.25 });
-      const rawMoveX = gsap.quickSetter(ema, 'x', 'px');
-      const rawMoveY = gsap.quickSetter(ema, 'y', 'px');
-      const moveX = x => rawMoveX(x - ORIGIN_FIX().x);
-      const moveY = y => rawMoveY(y - ORIGIN_FIX().y);
-      const bodyRotate = gsap.quickSetter(corps, 'rotation', 'deg');
-      const bodyY = gsap.quickSetter(corps, 'y', 'px');
-      const headRotate = gsap.quickSetter(tete, 'rotation', 'deg');
-      const headX = gsap.quickSetter(tete, 'x', 'px');
-      const headY = gsap.quickSetter(tete, 'y', 'px');
-      const eyeScale = yeux.map(oeil => gsap.quickSetter(oeil, 'scaleY'));
-      const eyeSetters = yeux.map((oeil, i) => ({
-        x: gsap.quickSetter(oeil, 'x', 'px'),
-        y: gsap.quickSetter(oeil, 'y', 'px'),
-        r: gsap.quickSetter(oeil, 'rotation', 'deg'),
-        dir: i === 0 ? -1 : 1            // œil gauche / droit : coins intérieurs relevés
-      }));
-      // x/y GSAP sur le même élément que scale CSS : GSAP conserve l'échelle.
-      gsap.set(ema, {
-        x: position.x - ORIGIN_FIX().x,
-        y: position.y - ORIGIN_FIX().y,
-        scale: 0.5
-      });
-      // Appliquer la pose dès le premier affichage : yeux clos, corps retourné, tête abaissée.
-      gsap.set(yeux, { transformOrigin: '50% 50%' });
-      gsap.set(corps, { rotation: 180, y: SLEEP_BODY_Y });
-      gsap.set(tete, { y: SLEEP_HEAD_Y });
-      gsap.set(yeux, { scaleY: 0.06 });
-      function wake() {
-        resetJoy();
-        poseTimeline?.kill();
-        awake = false;
-        isHolding = false;
-        position.vx = position.vy = 0;
-        poseTimeline = gsap.timeline({ onComplete() {
-          awake = true;
-          // Évite un déplacement vers une ancienne destination au réveil.
-          target.x = position.x;
-          target.y = position.y;
-        }});
-        poseTimeline.to(pose, { headY: 0, duration: 0.85, ease: 'power3.out' }, 0);
-        poseTimeline.to(pose, { bodyRotation: 0, bodyY: 0, duration: 1.05, ease: 'power3.inOut' }, 0.1);
-        poseTimeline.to(pose, { eyesOpen: 1, duration: 0.32, ease: 'power2.out' }, 0.64);
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) poseTimeline.progress(1);
-      }
-      function sleep() {
-        resetJoy();
-        poseTimeline?.kill();
-        awake = false;
-        isHolding = false;
-        target.x = position.x;
-        target.y = position.y;
-        position.vx = position.vy = 0;
-        poseTimeline = gsap.timeline();
-        poseTimeline.to(pose, { eyesOpen: 0, duration: 0.23, ease: 'power2.inOut' }, 0);
-        poseTimeline.to(pose, { headY: SLEEP_HEAD_Y, duration: 0.85, ease: 'power3.inOut' }, 0.1);
-        poseTimeline.to(pose, { bodyRotation: 180, bodyY: SLEEP_BODY_Y, duration: 1.05, ease: 'power3.inOut' }, 0);
-        // Retour aux coordonnées exactes du premier affichage, même après déplacement.
-        poseTimeline.to(position, { x: homePosition.x, y: homePosition.y, duration: 1.15, ease: 'power3.inOut' }, 0);
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) poseTimeline.progress(1);
-      }
-      
-      function react(kind) {
-        if (!awake) return;
-        moodTl?.kill();
-        if (kind === 'happy') {
-          moodTl = gsap.timeline()
-            .to(pose, { sad: 0, shake: 0, duration: 0.15 }, 0)
-            .to(pose, { happy: 1, duration: 0.14, ease: 'power2.out', onUpdate: applyHappy }, 0)
-            .to(pose, { hop: 22, duration: 0.18, ease: 'power2.out' }, 0)
-            .to(pose, { hop: 0,  duration: 0.32, ease: 'bounce.out' }, 0.18)
-            .to(pose, { hop: 14, duration: 0.15, ease: 'power2.out' }, 0.62)
-            .to(pose, { hop: 0,  duration: 0.28, ease: 'bounce.out' }, 0.77)
-            .to(pose, { happy: 0, duration: 0.25, ease: 'power2.inOut', onUpdate: applyHappy }, 1.7);
-        } else {
-          moodTl = gsap.timeline()
-            .to(pose, { happy: 0, hop: 0, duration: 0.1, onUpdate: applyHappy }, 0)
-            .to(pose, { sad: 1, duration: 0.4, ease: 'power2.out' }, 0)
-            .to(pose, { shake: -7, duration: 0.12, ease: 'sine.inOut' }, 0.35)
-            .to(pose, { shake: 7,  duration: 0.2,  ease: 'sine.inOut' }, 0.47)
-            .to(pose, { shake: -5, duration: 0.2,  ease: 'sine.inOut' }, 0.67)
-            .to(pose, { shake: 0,  duration: 0.15, ease: 'sine.out' }, 0.87)
-            .to(pose, { sad: 0, duration: 0.5, ease: 'power2.inOut' }, 2.2);
+      const tl = gsap.timeline({
+        onComplete() {
+          screenReady = true;
+          phase = "empty";
+          say(TEXTES.bulle.attente);
+          resetInactivity();
         }
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) moodTl.progress(1);
-      }
-      window.emaController = { wake, sleep, react };
-      function animate(now) {
-        const dt = Math.min((now - lastTime) / 1000, 0.05);
-        lastTime = now;
-        if (!awake) {
-          bodyTilt += (0 - bodyTilt) * (1 - Math.exp(-12 * dt));
-          headTilt += (0 - headTilt) * (1 - Math.exp(-12 * dt));
-          headAdvance += (0 - headAdvance) * (1 - Math.exp(-12 * dt));
-          eyeX += (0 - eyeX) * (1 - Math.exp(-12 * dt));
-          eyeY += (0 - eyeY) * (1 - Math.exp(-12 * dt));
-          moveX(position.x);
-          moveY(position.y);
-          bodyRotate(bodyTilt + pose.bodyRotation);
-          bodyY(pose.bodyY);
-          headRotate(headTilt);
-          headX(headAdvance);
-          headY(pose.headY);
-          eyeSetters.forEach((oeil, i) => {
-            oeil.x(eyeX);
-            oeil.y(eyeY);
-            oeil.r(0);
-            eyeScale[i](pose.eyesOpen * 0.94);
-          });
-          requestAnimationFrame(animate);
-          return;
+      });
+      transition = tl;
+
+      // 1. Le titre rapetisse et monte ; l'horloge garde sa taille (on annule le zoom)
+      tl.to(progressTween, {
+        v: 1,
+        duration: 1.1,
+        ease: "power3.inOut",
+        onUpdate() {
+          const s = 1 + (T.titleScale - 1) * progressTween.v;
+          gsap.set(wrap, { scale: s, y: T.titleDy * progressTween.v });
+          gsap.set(tagPos, { scale: 1 / s });
         }
-        const dx = target.x - position.x;
-        const dy = target.y - position.y;
-        const distance = Math.hypot(dx, dy);
-        const desiredSpeed = Math.min(CONFIG.maxSpeed, distance * CONFIG.acceleration);
-        const desiredVX = distance > 0.01 ? dx / distance * desiredSpeed : 0;
-        const desiredVY = distance > 0.01 ? dy / distance * desiredSpeed : 0;
-        const steering = 1 - Math.exp(-5 * dt);
-        position.vx += (desiredVX - position.vx) * steering;
-        position.vy += (desiredVY - position.vy) * steering;
-        position.x += position.vx * dt;
-        position.y += position.vy * dt;
-        moveX(position.x);
-        moveY(position.y - pose.hop);
-        const targetTilt = gsap.utils.clamp(-CONFIG.maxTilt, CONFIG.maxTilt,
-          position.vx / CONFIG.maxSpeed * CONFIG.maxTilt);
-        const tiltFactor = 1 - Math.exp(-CONFIG.tiltSmoothness * dt);
-        bodyTilt += (targetTilt - bodyTilt) * tiltFactor;
-        headTilt += (bodyTilt * 0.45 - headTilt) * tiltFactor;
-        headAdvance += (position.vx / CONFIG.maxSpeed * 12 - headAdvance) * tiltFactor;
-        const targetEyeX = gsap.utils.clamp(-16, 26, position.vx / CONFIG.maxSpeed * 16);
-        const targetEyeY = gsap.utils.clamp(-10, 10, position.vy / CONFIG.maxSpeed * 10);
-        const eyeFactor = 1 - Math.exp(-10 * dt);
-        eyeX += (targetEyeX - eyeX) * eyeFactor;
-        eyeY += (targetEyeY - eyeY) * eyeFactor;
-        bodyRotate(bodyTilt);
-        bodyY(pose.bodyY);
-        headRotate(headTilt + pose.shake);
-        headX(headAdvance);
-        headY(pose.headY + pose.sad * 10);
-        eyeSetters.forEach((oeil, i) => {
-          oeil.x(eyeX);
-          oeil.y(eyeY + pose.happy * 14 + pose.sad * 30);
-          oeil.r(pose.sad * 16 * oeil.dir);
-          eyeScale[i](0.94 * (1 - pose.sad * 0.5));
-        });
-        requestAnimationFrame(animate);
-      }
-      requestAnimationFrame(animate);
-    })();
+      });
+
+      // 2. Les cadres de relevés glissent à droite, l'un après l'autre
+      boxes.forEach((b, i) => {
+        if (!T.boxes[i]) return;
+        tl.to(b, { x: T.boxes[i].x, y: T.boxes[i].y, duration: 0.9, ease: "power3.inOut" }, 0.35 + i * 0.12);
+      });
+
+      // 3. Le carré vide apparaît
+      tl.to(slot, { opacity: 1, scale: 1, duration: 0.7, ease: "back.out(1.8)" }, "+=0.35");
+
+      if (prefersReducedMotion) tl.timeScale(50);   // quasi instantané
+    }
+
+    // Retour à l'accueil : on rejoue l'animation d'ouverture à l'envers
+    function returnHome() {
+      if (!opened || !transition || phase === "processing") return;
+      screenReady = false;
+      hideBubble();
+      clearTimeout(inactivityTimer);
+      window.emaController?.sleep();
+      resetDuplication();
+
+      transition.eventCallback("onReverseComplete", () => {
+        opened = false;
+        document.body.classList.remove("is-open");
+        document.body.style.cursor = "pointer";
+        requestAnimationFrame(positionTouchHint);
+        // On efface les styles posés par GSAP pour retrouver l'état de départ
+        gsap.set([wrap, tagPos, ...boxes, slot], { clearProps: "all" });
+        gsap.set(tagPos, { transformOrigin: "50% 0%" });
+        gsap.set(slot, { opacity: 0, scale: 0.6 });
+      });
+      transition.reverse();
+    }
+
+    // Si la fenêtre change de taille, on recale tout
+    addEventListener("resize", () => {
+      if (!opened) { positionTouchHint(); return; }
+      const T = computeTargets();
+      gsap.set(wrap, { scale: T.titleScale, y: T.titleDy });
+      gsap.set(tagPos, { scale: 1 / T.titleScale });
+      boxes.forEach((b, i) => {
+        if (T.boxes[i]) gsap.set(b, { x: T.boxes[i].x, y: T.boxes[i].y });
+      });
+    });
+
+    // Un clic n'importe où ouvre l'écran
+    document.addEventListener("click", openUp);
+  }
   </script>
 </body>
 </html>
